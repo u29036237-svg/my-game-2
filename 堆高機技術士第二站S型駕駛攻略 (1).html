@@ -1,0 +1,2815 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="artifact-type" content="tool">
+  <meta name="design-style" content="aurora">
+  <title>3D 堆高機技術士第二站 S 型駕駛模擬器</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+
+      /* Aurora base tokens */
+      --background: #0c1214;
+      --surface-container-low: #111a1e;
+      --surface-container: #152024;
+      --surface-container-high: #1c2a30;
+
+      --on-surface: #edf3f5;
+      --on-surface-variant: #94a8b0;
+
+      --outline: #38515c;
+      --outline-variant: #213138;
+
+      --primary: #63c7d6;
+      --on-primary: #081214;
+      --primary-container: #163840;
+      --on-primary-container: #c7f0f7;
+      --secondary: #5d7882;
+      --tertiary: #87d69b;
+      --error: #f27474;
+      --on-error: #1a0606;
+
+      --data-1: #63c7d6;
+      --data-2: #87d69b;
+      --data-3: #e8b954;
+      --data-4: #f08c70;
+      --data-context: #415861;
+
+      --font-headline: 'Noto Sans TC', 'Instrument Sans', sans-serif;
+      --font-body: 'Noto Sans TC', 'Plus Jakarta Sans', sans-serif;
+      --font-label: 'Geist Mono', 'Noto Sans TC', monospace;
+
+      --rounded: 0.5rem;
+      --rounded-lg: 0.75rem;
+      --rounded-full: 9999px;
+
+      --hairline: 1px solid var(--outline-variant);
+      --hairline-strong: 1px solid var(--outline);
+      --panel-gradient: linear-gradient(180deg, rgba(22, 34, 38, 0.54) 0%, rgba(17, 26, 30, 0.44) 100%);
+      --hud-glass: rgba(12, 18, 20, 0.36);
+      --hud-glass-strong: rgba(17, 26, 30, 0.56);
+      --hud-glass-active: rgba(99, 199, 214, 0.24);
+      --hud-border: rgba(237, 243, 245, 0.18);
+      --hud-border-strong: rgba(99, 199, 214, 0.55);
+      --hud-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+
+      /* Shared semantic & motion tokens */
+      --positive: #87d69b;
+      --warning: #e8b954;
+      --focus: #63c7d6;
+
+      --sage-tint: rgba(135, 214, 155, 0.18);
+      --cyan-tint: rgba(99, 199, 214, 0.18);
+      --amber-tint: rgba(232, 185, 84, 0.2);
+      --red-tint: rgba(242, 116, 116, 0.22);
+
+      --wheel-rim: rgba(21, 32, 36, 0.55);
+      --wheel-spoke: rgba(148, 168, 176, 0.42);
+      --wheel-grip: rgba(99, 199, 214, 0.9);
+      --pedal-surface: rgba(21, 32, 36, 0.46);
+      --pedal-active: rgba(99, 199, 214, 0.32);
+      --lever-track: rgba(12, 18, 20, 0.42);
+      --lever-knob: rgba(237, 243, 245, 0.88);
+      --overlay-backdrop: rgba(8, 14, 17, 0.92);
+
+      --space-xs: 0.25rem;
+      --space-sm: 0.5rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2.5rem;
+
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --dur-micro: 120ms;
+      --dur-short: 220ms;
+
+      /* Unified cross-device proportional scale unit:
+         scales identically from 667x375 mobile landscape up to 1920x1080 desktop */
+      --ui: clamp(0.66rem, min(1.38vw, 2.45vh), 1.15rem);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overflow-x: clip;
+      background: var(--background);
+      color: var(--on-surface);
+      font-family: var(--font-body);
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
+    }
+
+    header { position: static !important; }
+
+    button, input, select {
+      font-family: inherit;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    #sim-root {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #gl-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* =====================================================================
+       HUD OVERLAY — IDENTICAL PROPORTIONS ON DESKTOP & MOBILE LANDSCAPE
+       ===================================================================== */
+    .hud-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: calc(var(--ui) * 0.7) calc(var(--ui) * 0.9);
+      padding-left: max(calc(var(--ui) * 0.9), env(safe-area-inset-left));
+      padding-right: max(calc(var(--ui) * 0.9), env(safe-area-inset-right));
+      padding-bottom: max(calc(var(--ui) * 0.65), env(safe-area-inset-bottom));
+    }
+
+    /* Top Telemetry Strip */
+    .hud-topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: calc(var(--ui) * 0.6);
+      width: 100%;
+    }
+
+    .hud-telemetry-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: calc(var(--ui) * 0.45);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.35) calc(var(--ui) * 0.65);
+      box-shadow: var(--hud-shadow);
+      pointer-events: auto;
+    }
+
+    .brand-badge {
+      display: flex;
+      flex-direction: column;
+      padding-right: calc(var(--ui) * 0.55);
+      border-right: 1px solid var(--hud-border);
+      line-height: 1.15;
+    }
+
+    .brand-title {
+      font-family: var(--font-headline);
+      font-size: calc(var(--ui) * 0.78);
+      font-weight: 700;
+      color: var(--on-surface);
+      white-space: nowrap;
+    }
+
+    .brand-sub {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.56);
+      color: var(--primary);
+      white-space: nowrap;
+    }
+
+    .metric-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 0 calc(var(--ui) * 0.42);
+      border-right: 1px solid var(--hud-border);
+      min-width: calc(var(--ui) * 3.8);
+    }
+
+    .metric-chip:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    .metric-lbl {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.54);
+      color: var(--on-surface-variant);
+      white-space: nowrap;
+    }
+
+    .metric-val {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.85);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--on-surface);
+      white-space: nowrap;
+    }
+
+    .metric-val.is-good { color: var(--positive); }
+    .metric-val.is-warn { color: var(--warning); }
+    .metric-val.is-bad { color: var(--error); }
+
+    /* Top Center Stage Guide Banner */
+    .stage-pill {
+      display: flex;
+      align-items: center;
+      gap: calc(var(--ui) * 0.45);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: var(--rounded-full);
+      padding: calc(var(--ui) * 0.34) calc(var(--ui) * 0.85);
+      box-shadow: var(--hud-shadow);
+      pointer-events: auto;
+      max-width: calc(var(--ui) * 28);
+    }
+
+    .stage-dot {
+      width: calc(var(--ui) * 0.55);
+      height: calc(var(--ui) * 0.55);
+      border-radius: var(--rounded-full);
+      background: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .stage-dot.is-warn { background: var(--warning); }
+    .stage-dot.is-bad { background: var(--error); }
+    .stage-dot.is-good { background: var(--positive); }
+
+    .stage-text {
+      font-size: calc(var(--ui) * 0.72);
+      font-weight: 500;
+      color: var(--on-surface);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Top Right Actions + Radar Mini-map */
+    .hud-top-right {
+      display: flex;
+      align-items: flex-start;
+      gap: calc(var(--ui) * 0.5);
+      pointer-events: auto;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: calc(var(--ui) * 0.35);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.3);
+      box-shadow: var(--hud-shadow);
+    }
+
+    .hud-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: calc(var(--ui) * 0.28);
+      min-height: calc(var(--ui) * 2.1);
+      min-width: calc(var(--ui) * 2.3);
+      padding: calc(var(--ui) * 0.28) calc(var(--ui) * 0.55);
+      border-radius: calc(var(--ui) * 0.45);
+      border: 1px solid var(--hud-border);
+      background: var(--hud-glass-strong);
+      color: var(--on-surface);
+      font-size: calc(var(--ui) * 0.68);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+      white-space: nowrap;
+    }
+
+    .hud-btn:hover {
+      border-color: var(--primary);
+    }
+
+    .hud-btn:active {
+      transform: scale(0.96);
+    }
+
+    .hud-btn.is-active {
+      background: var(--hud-glass-active);
+      border-color: var(--primary);
+      color: var(--on-primary-container);
+    }
+
+    .minimap-box {
+      width: calc(var(--ui) * 5.6);
+      height: calc(var(--ui) * 5.6);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.25);
+      box-shadow: var(--hud-shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #minimap-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Alert Toast (Center Upper) */
+    .hud-toast {
+      position: absolute;
+      top: calc(var(--ui) * 3.8);
+      left: 50%;
+      transform: translateX(-50%) translateY(-6px);
+      background: var(--hud-glass-strong);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--warning);
+      color: var(--on-surface);
+      padding: calc(var(--ui) * 0.35) calc(var(--ui) * 0.9);
+      border-radius: var(--rounded-full);
+      font-size: calc(var(--ui) * 0.72);
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+      white-space: nowrap;
+      z-index: 15;
+    }
+
+    .hud-toast.is-visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .hud-toast.is-error {
+      border-color: var(--error);
+      background: var(--red-tint);
+    }
+
+    .hud-toast.is-good {
+      border-color: var(--positive);
+      background: var(--sage-tint);
+    }
+
+    /* =====================================================================
+       BOTTOM HUD: LEFT & RIGHT CONTROLS (ALWAYS IDENTICAL LAYOUT)
+       ===================================================================== */
+    .hud-bottom {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      width: 100%;
+      gap: calc(var(--ui) * 1.0);
+    }
+
+    /* LEFT CONTROL CLUSTER */
+    .left-cluster {
+      display: flex;
+      align-items: flex-end;
+      gap: calc(var(--ui) * 0.75);
+      pointer-events: auto;
+    }
+
+    /* Extra-Large Steering Wheel */
+    .wheel-wrap {
+      position: relative;
+      width: calc(var(--ui) * 12.2);
+      height: calc(var(--ui) * 12.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      touch-action: none;
+    }
+
+    .wheel-angle-badge {
+      position: absolute;
+      top: calc(var(--ui) * -1.15);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--hud-glass);
+      border: 1px solid var(--hud-border);
+      border-radius: var(--rounded-full);
+      padding: calc(var(--ui) * 0.12) calc(var(--ui) * 0.55);
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.62);
+      color: var(--primary);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .steering-wheel {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: radial-gradient(circle, transparent 58%, var(--wheel-rim) 59%, var(--wheel-rim) 73%, transparent 74%);
+      border: calc(var(--ui) * 0.95) solid var(--wheel-rim);
+      box-shadow: 0 0 0 1px var(--hud-border), inset 0 0 0 1px var(--hud-border), var(--hud-shadow);
+      cursor: grab;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      will-change: transform;
+    }
+
+    .steering-wheel:active {
+      cursor: grabbing;
+    }
+
+    .wheel-spoke {
+      position: absolute;
+      background: var(--wheel-spoke);
+      border: 1px solid var(--hud-border);
+      pointer-events: none;
+    }
+
+    .wheel-spoke-left {
+      width: 34%;
+      height: calc(var(--ui) * 0.85);
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      border-radius: calc(var(--ui) * 0.3);
+    }
+
+    .wheel-spoke-right {
+      width: 34%;
+      height: calc(var(--ui) * 0.85);
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      border-radius: calc(var(--ui) * 0.3);
+    }
+
+    .wheel-spoke-bottom {
+      width: calc(var(--ui) * 0.9);
+      height: 35%;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: calc(var(--ui) * 0.3);
+    }
+
+    .wheel-top-marker {
+      position: absolute;
+      top: calc(var(--ui) * -0.92);
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(var(--ui) * 0.8);
+      height: calc(var(--ui) * 0.9);
+      background: var(--warning);
+      border-radius: calc(var(--ui) * 0.2);
+      pointer-events: none;
+    }
+
+    .wheel-spinner-knob {
+      position: absolute;
+      top: calc(var(--ui) * 0.2);
+      right: calc(var(--ui) * 1.15);
+      width: calc(var(--ui) * 1.85);
+      height: calc(var(--ui) * 1.85);
+      border-radius: 50%;
+      background: var(--hud-glass-strong);
+      border: 2px solid var(--primary);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+    }
+
+    /* Center Recenter (X) Button inside the steering wheel */
+    .wheel-center-btn {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: calc(var(--ui) * 4.2);
+      height: calc(var(--ui) * 4.2);
+      border-radius: 50%;
+      background: var(--hud-glass-strong);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 2px solid var(--primary);
+      color: var(--on-surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: calc(var(--ui) * 0.08);
+      cursor: pointer;
+      z-index: 4;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.38);
+      transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+      touch-action: none;
+    }
+
+    .wheel-center-btn:hover {
+      background: var(--hud-glass-active);
+    }
+
+    .wheel-center-btn:active {
+      transform: translate(-50%, -50%) scale(0.93);
+      background: var(--primary);
+      color: var(--on-primary);
+    }
+
+    .wheel-center-title {
+      font-size: calc(var(--ui) * 0.78);
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .wheel-center-key {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.58);
+      opacity: 0.85;
+    }
+
+    /* Vertical Shifter (F / N / R) + Safety Switch Column */
+    .left-aux-col {
+      display: flex;
+      align-items: flex-end;
+      gap: calc(var(--ui) * 0.55);
+    }
+
+    .shifter-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: calc(var(--ui) * 0.28);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.42);
+      box-shadow: var(--hud-shadow);
+    }
+
+    .control-caption {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.56);
+      color: var(--on-surface-variant);
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .shifter-track {
+      display: flex;
+      flex-direction: column;
+      gap: calc(var(--ui) * 0.25);
+      background: var(--lever-track);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.45);
+      padding: calc(var(--ui) * 0.22);
+      width: calc(var(--ui) * 3.3);
+    }
+
+    .gear-btn {
+      height: calc(var(--ui) * 2.55);
+      min-height: 36px;
+      border: 1px solid transparent;
+      border-radius: calc(var(--ui) * 0.32);
+      background: transparent;
+      color: var(--on-surface-variant);
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.78);
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.05;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out);
+    }
+
+    .gear-btn span {
+      font-family: var(--font-body);
+      font-size: calc(var(--ui) * 0.52);
+      font-weight: 500;
+    }
+
+    .gear-btn.is-selected[data-gear="F"] {
+      background: var(--sage-tint);
+      border-color: var(--positive);
+      color: var(--positive);
+    }
+
+    .gear-btn.is-selected[data-gear="N"] {
+      background: var(--cyan-tint);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .gear-btn.is-selected[data-gear="R"] {
+      background: var(--amber-tint);
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    /* Safety Switches: Seatbelt (B), Hand Signal (G), Parking Brake (P) */
+    .safety-stack {
+      display: flex;
+      flex-direction: column;
+      gap: calc(var(--ui) * 0.38);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.42);
+      box-shadow: var(--hud-shadow);
+    }
+
+    .safety-btn {
+      min-width: calc(var(--ui) * 5.2);
+      min-height: calc(var(--ui) * 2.55);
+      padding: calc(var(--ui) * 0.25) calc(var(--ui) * 0.5);
+      border-radius: calc(var(--ui) * 0.42);
+      border: 1px solid var(--hud-border);
+      background: var(--hud-glass-strong);
+      color: var(--on-surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: calc(var(--ui) * 0.35);
+      cursor: pointer;
+      font-size: calc(var(--ui) * 0.68);
+      font-weight: 600;
+      transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out);
+      white-space: nowrap;
+    }
+
+    .safety-btn .key-tag {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.56);
+      padding: calc(var(--ui) * 0.08) calc(var(--ui) * 0.28);
+      border-radius: calc(var(--ui) * 0.22);
+      background: var(--lever-track);
+      color: var(--on-surface-variant);
+    }
+
+    .safety-btn.is-ok {
+      background: var(--sage-tint);
+      border-color: var(--positive);
+      color: var(--positive);
+    }
+
+    .safety-btn.is-warn {
+      background: var(--red-tint);
+      border-color: var(--error);
+      color: var(--error);
+    }
+
+    .safety-btn.is-active {
+      background: var(--cyan-tint);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* RIGHT CONTROL CLUSTER */
+    .right-cluster {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: calc(var(--ui) * 0.55);
+      pointer-events: auto;
+    }
+
+    /* Hydraulic Levers Row (Lift & Tilt) */
+    .levers-row {
+      display: flex;
+      align-items: stretch;
+      gap: calc(var(--ui) * 0.55);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.45);
+      box-shadow: var(--hud-shadow);
+    }
+
+    .lever-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: calc(var(--ui) * 0.22);
+      width: calc(var(--ui) * 4.8);
+    }
+
+    .lever-pad {
+      position: relative;
+      width: 100%;
+      height: calc(var(--ui) * 6.8);
+      background: var(--lever-track);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.45);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      touch-action: none;
+      cursor: pointer;
+    }
+
+    .lever-zone {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: calc(var(--ui) * 0.62);
+      font-weight: 600;
+      color: var(--on-surface-variant);
+      padding: calc(var(--ui) * 0.15);
+      transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+      pointer-events: none;
+      text-align: center;
+      line-height: 1.15;
+    }
+
+    .lever-zone-top {
+      border-bottom: 1px dashed var(--hud-border);
+    }
+
+    .lever-zone.is-engaged {
+      background: var(--hud-glass-active);
+      color: var(--primary);
+    }
+
+    .lever-knob-bar {
+      position: absolute;
+      left: 12%;
+      right: 12%;
+      top: 50%;
+      height: calc(var(--ui) * 0.85);
+      transform: translateY(-50%);
+      background: var(--lever-knob);
+      border: 2px solid var(--primary);
+      border-radius: var(--rounded-full);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      transition: top var(--dur-micro) var(--ease-out);
+    }
+
+    /* Three Pedals Row: Inching (Shift), Brake (Space), Throttle (W/Up) */
+    .pedals-row {
+      display: flex;
+      align-items: flex-end;
+      gap: calc(var(--ui) * 0.48);
+      background: var(--hud-glass);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--hud-border);
+      border-radius: calc(var(--ui) * 0.65);
+      padding: calc(var(--ui) * 0.45);
+      box-shadow: var(--hud-shadow);
+    }
+
+    .pedal-btn {
+      position: relative;
+      width: calc(var(--ui) * 4.3);
+      height: calc(var(--ui) * 5.2);
+      min-width: 44px;
+      min-height: 48px;
+      border-radius: calc(var(--ui) * 0.42);
+      border: 1px solid var(--hud-border);
+      background: var(--pedal-surface);
+      color: var(--on-surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: calc(var(--ui) * 0.42) calc(var(--ui) * 0.22);
+      cursor: pointer;
+      touch-action: none;
+      transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+
+    .pedal-btn.pedal-throttle {
+      height: calc(var(--ui) * 5.8);
+    }
+
+    .pedal-tread {
+      width: 72%;
+      height: calc(var(--ui) * 0.22);
+      border-radius: var(--rounded-full);
+      background: var(--outline);
+      opacity: 0.65;
+    }
+
+    .pedal-name {
+      font-size: calc(var(--ui) * 0.72);
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .pedal-key {
+      font-family: var(--font-label);
+      font-size: calc(var(--ui) * 0.54);
+      color: var(--on-surface-variant);
+    }
+
+    .pedal-btn.is-pressed {
+      transform: translateY(2px) scale(0.97);
+      background: var(--pedal-active);
+      border-color: var(--primary);
+      color: var(--on-primary-container);
+    }
+
+    .pedal-btn[data-pedal="brake"].is-pressed {
+      background: var(--red-tint);
+      border-color: var(--error);
+    }
+
+    .pedal-btn[data-pedal="inch"].is-pressed {
+      background: var(--amber-tint);
+      border-color: var(--warning);
+    }
+
+    /* =====================================================================
+       HAND RAISE VISUAL OVERLAY (RIGHT EDGE INDICATOR)
+       ===================================================================== */
+    .hand-signal-badge {
+      position: absolute;
+      right: 18%;
+      top: 22%;
+      display: flex;
+      align-items: center;
+      gap: calc(var(--ui) * 0.45);
+      background: var(--sage-tint);
+      border: 1px solid var(--positive);
+      color: var(--positive);
+      padding: calc(var(--ui) * 0.45) calc(var(--ui) * 0.85);
+      border-radius: var(--rounded-full);
+      font-size: calc(var(--ui) * 0.78);
+      font-weight: 700;
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+      z-index: 12;
+    }
+
+    .hand-signal-badge.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* =====================================================================
+       RESULTS / HELP MODAL (INLINE, NO ALERT/CONFIRM)
+       ===================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--overlay-backdrop);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+      z-index: 60;
+    }
+
+    .modal-backdrop.is-open {
+      display: flex;
+    }
+
+    .modal-card {
+      width: min(560px, 94vw);
+      max-height: 88dvh;
+      overflow-y: auto;
+      background: var(--surface-container);
+      border: 1px solid var(--outline);
+      border-radius: var(--rounded-lg);
+      padding: var(--space-lg);
+      box-shadow: var(--hud-shadow);
+      color: var(--on-surface);
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-md);
+      border-bottom: var(--hairline);
+      padding-bottom: var(--space-sm);
+      margin-bottom: var(--space-md);
+    }
+
+    .modal-title {
+      margin: 0;
+      font-family: var(--font-headline);
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-sm);
+      margin-bottom: var(--space-md);
+    }
+
+    .stat-tile {
+      background: var(--surface-container-low);
+      border: var(--hairline);
+      border-radius: var(--rounded);
+      padding: var(--space-sm) var(--space-md);
+    }
+
+    .stat-tile-lbl {
+      font-family: var(--font-label);
+      font-size: 0.75rem;
+      color: var(--on-surface-variant);
+    }
+
+    .stat-tile-val {
+      font-family: var(--font-label);
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .guide-list {
+      margin: 0 0 var(--space-md) 0;
+      padding-left: 1.25rem;
+      font-size: 0.9375rem;
+      line-height: 1.55;
+      color: var(--on-surface-variant);
+    }
+
+    .guide-list strong {
+      color: var(--on-surface);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
+    }
+
+    .primary-btn {
+      min-height: 44px;
+      padding: 0 var(--space-lg);
+      border-radius: var(--rounded);
+      border: none;
+      background: var(--primary);
+      color: var(--on-primary);
+      font-weight: 700;
+      font-size: 0.9375rem;
+      cursor: pointer;
+    }
+
+    .secondary-btn {
+      min-height: 44px;
+      padding: 0 var(--space-md);
+      border-radius: var(--rounded);
+      border: var(--hairline-strong);
+      background: transparent;
+      color: var(--on-surface);
+      font-weight: 600;
+      font-size: 0.9375rem;
+      cursor: pointer;
+    }
+
+    /* =====================================================================
+       PORTRAIT ROTATE PROMPT (MOBILE PORTRAIT LOCK)
+       ===================================================================== */
+    .portrait-lock-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: var(--overlay-backdrop);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: var(--space-xl);
+      gap: var(--space-md);
+    }
+
+    .rotate-icon-svg {
+      width: 72px;
+      height: 72px;
+      color: var(--primary);
+      animation: rotateHint 2.4s var(--ease-in-out) infinite;
+    }
+
+    @keyframes rotateHint {
+      0%, 20% { transform: rotate(0deg); }
+      55%, 75% { transform: rotate(-90deg); }
+      100% { transform: rotate(0deg); }
+    }
+
+    .portrait-title {
+      margin: 0;
+      font-family: var(--font-headline);
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--on-surface);
+    }
+
+    .portrait-desc {
+      margin: 0;
+      max-width: 34ch;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      color: var(--on-surface-variant);
+    }
+
+    /* Show portrait prompt when viewport is portrait on mobile/narrow screens */
+    @media (orientation: portrait) and (max-width: 920px) {
+      .portrait-lock-overlay {
+        display: flex;
+      }
+    }
+
+    /* Mobile breakpoint guard for page-level responsiveness */
+    @media (max-width: 640px) {
+      .modal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="sim-root">
+    <canvas id="gl-canvas"></canvas>
+
+    <!-- HUD Overlay -->
+    <div class="hud-layer" id="hud-layer">
+      <!-- Top Bar -->
+      <div class="hud-topbar">
+        <div class="hud-telemetry-group">
+          <div class="brand-badge">
+            <span class="brand-title">堆高機第二站 S 型模擬器</span>
+            <span class="brand-sub" id="mode-label">考照實作模式</span>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-lbl">車速</span>
+            <span class="metric-val" id="val-speed">0.0 km/h</span>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-lbl">貨叉高度</span>
+            <span class="metric-val" id="val-fork-h">0 cm</span>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-lbl">門架傾角</span>
+            <span class="metric-val" id="val-tilt">0.0°</span>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-lbl">壓線 / 撞錐</span>
+            <span class="metric-val is-good" id="val-penalties">0 / 0</span>
+          </div>
+          <div class="metric-chip">
+            <span class="metric-lbl">計時</span>
+            <span class="metric-val" id="val-timer">00:00</span>
+          </div>
+        </div>
+
+        <div class="stage-pill" id="stage-pill">
+          <span class="stage-dot" id="stage-dot"></span>
+          <span class="stage-text" id="stage-text">準備出發：繫安全帶 (B) → 升叉 15~20cm 並後傾 → 舉手 (G) → 放手煞車 (P)</span>
+        </div>
+
+        <div class="hud-top-right">
+          <div class="top-actions">
+            <button type="button" class="hud-btn is-active" id="btn-mode" onclick="toggleMode()">考照</button>
+            <button type="button" class="hud-btn is-active" id="btn-sound" onclick="toggleSound()">音效</button>
+            <button type="button" class="hud-btn" id="btn-help" onclick="openHelpModal()">說明</button>
+            <button type="button" class="hud-btn" id="btn-reset" onclick="resetSimulation()">重置</button>
+          </div>
+          <div class="minimap-box" aria-label="S 型路線俯視雷達">
+            <canvas id="minimap-canvas" width="128" height="128"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transient Toast -->
+      <div class="hud-toast" id="hud-toast"></div>
+
+      <!-- Visual Hand Signal Confirmation -->
+      <div class="hand-signal-badge" id="hand-signal-badge">舉手示意確認</div>
+
+      <!-- Bottom Control Clusters -->
+      <div class="hud-bottom">
+        <!-- LEFT HUD: Steering Wheel (Center X) + Shifter + Safety Switches -->
+        <div class="left-cluster">
+          <div class="wheel-wrap" id="wheel-wrap">
+            <div class="wheel-angle-badge" id="val-steer">方向盤 0°</div>
+            <div class="steering-wheel" id="steering-wheel" aria-label="轉向方向盤">
+              <div class="wheel-top-marker"></div>
+              <div class="wheel-spinner-knob"></div>
+              <div class="wheel-spoke wheel-spoke-left"></div>
+              <div class="wheel-spoke wheel-spoke-right"></div>
+              <div class="wheel-spoke wheel-spoke-bottom"></div>
+            </div>
+            <button type="button" class="wheel-center-btn" id="btn-recenter" onclick="recenterWheel()" aria-label="方向盤回正 (X)">
+              <span class="wheel-center-title">回正</span>
+              <span class="wheel-center-key">(X)</span>
+            </button>
+          </div>
+
+          <div class="left-aux-col">
+            <!-- Vertical Shifter F / N / R -->
+            <div class="shifter-panel">
+              <span class="control-caption">排檔桿</span>
+              <div class="shifter-track" role="radiogroup" aria-label="直式排檔桿">
+                <button type="button" class="gear-btn" data-gear="F" id="gear-F" onclick="setGear('F')">F<span>前進</span></button>
+                <button type="button" class="gear-btn is-selected" data-gear="N" id="gear-N" onclick="setGear('N')">N<span>空檔</span></button>
+                <button type="button" class="gear-btn" data-gear="R" id="gear-R" onclick="setGear('R')">R<span>退後</span></button>
+              </div>
+            </div>
+
+            <!-- Safety Switches: Seatbelt (B), Hand Signal (G), Parking Brake (P) -->
+            <div class="safety-stack">
+              <span class="control-caption">安全操作</span>
+              <button type="button" class="safety-btn is-warn" id="btn-belt" onclick="toggleSeatbelt()">
+                <span>安全帶</span>
+                <span class="key-tag">B</span>
+              </button>
+              <button type="button" class="safety-btn" id="btn-hand" onclick="triggerHandSignal()">
+                <span>舉手示意</span>
+                <span class="key-tag">G</span>
+              </button>
+              <button type="button" class="safety-btn is-warn" id="btn-park" onclick="toggleParkingBrake()">
+                <span>手煞車</span>
+                <span class="key-tag">P</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT HUD: Lift Lever + Tilt Lever + Three Pedals -->
+        <div class="right-cluster">
+          <div class="levers-row">
+            <!-- Lift Lever: Press DOWN -> Fork UP; Press UP -> Fork DOWN -->
+            <div class="lever-unit">
+              <span class="control-caption">升降桿</span>
+              <div class="lever-pad" id="lever-lift" data-lever="lift" aria-label="升降控制桿">
+                <div class="lever-zone lever-zone-top" id="lift-zone-up">
+                  <span>▲ 上</span>
+                  <span>下降 DOWN</span>
+                </div>
+                <div class="lever-zone lever-zone-bottom" id="lift-zone-down">
+                  <span>上升 UP</span>
+                  <span>▼ 下</span>
+                </div>
+                <div class="lever-knob-bar" id="lift-knob"></div>
+              </div>
+            </div>
+
+            <!-- Tilt Lever: Press UP -> Forward Tilt; Press DOWN -> Backward Tilt -->
+            <div class="lever-unit">
+              <span class="control-caption">傾斜桿</span>
+              <div class="lever-pad" id="lever-tilt" data-lever="tilt" aria-label="傾斜控制桿">
+                <div class="lever-zone lever-zone-top" id="tilt-zone-up">
+                  <span>▲ 上</span>
+                  <span>前傾 FWD</span>
+                </div>
+                <div class="lever-zone lever-zone-bottom" id="tilt-zone-down">
+                  <span>後傾 BWD</span>
+                  <span>▼ 下</span>
+                </div>
+                <div class="lever-knob-bar" id="tilt-knob"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Three Pedals: Inching (Shift), Brake (Space), Throttle (W/Up) -->
+          <div class="pedals-row">
+            <button type="button" class="pedal-btn" id="pedal-inch" data-pedal="inch" aria-label="吋動踏板 (Shift)">
+              <span class="pedal-tread"></span>
+              <span class="pedal-name">吋動</span>
+              <span class="pedal-key">Shift</span>
+            </button>
+            <button type="button" class="pedal-btn" id="pedal-brake" data-pedal="brake" aria-label="煞車踏板 (Space)">
+              <span class="pedal-tread"></span>
+              <span class="pedal-name">煞車</span>
+              <span class="pedal-key">Space</span>
+            </button>
+            <button type="button" class="pedal-btn pedal-throttle" id="pedal-throttle" data-pedal="throttle" aria-label="油門踏板 (W/↑)">
+              <span class="pedal-tread"></span>
+              <span class="pedal-name">油門</span>
+              <span class="pedal-key">W / ↑</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Portrait Orientation Lock Overlay -->
+    <div class="portrait-lock-overlay" id="portrait-overlay" role="dialog" aria-modal="true" aria-labelledby="portrait-title">
+      <svg class="rotate-icon-svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="18" y="8" width="28" height="48" rx="4"></rect>
+        <line x1="28" y1="49" x2="36" y2="49"></line>
+        <path d="M10 28 C10 18 16 12 24 10" stroke-dasharray="3 3"></path>
+        <polyline points="7 24 10 29 14 25"></polyline>
+      </svg>
+      <h2 class="portrait-title" id="portrait-title">請將手機橫持 (Rotate to Landscape)</h2>
+      <p class="portrait-desc">本模擬器採用與電腦版完全同步之寬幅第一人稱門架視野與雙手拇指 HUD 介面，請將裝置旋轉為橫向以獲得最佳操控體驗。</p>
+    </div>
+
+    <!-- Help / Exam Guide & Result Modal -->
+    <div class="modal-backdrop" id="info-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 class="modal-title" id="modal-title">操作說明與第二站 S 型要領</h2>
+          <button type="button" class="secondary-btn" onclick="closeModal()">關閉</button>
+        </div>
+        <div id="modal-body"></div>
+        <div class="modal-actions" id="modal-actions">
+          <button type="button" class="primary-btn" onclick="closeModal()">繼續駕駛</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <api-shim></api-shim>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* =====================================================================
+         1. STATE & PERSISTENCE
+         ===================================================================== */
+      var appState = {
+        mode: 'exam',          // 'exam' | 'free'
+        soundEnabled: true,
+        bestTimeSec: null,
+        completedRuns: 0
+      };
+
+      var sim = {
+        // Forklift chassis pose in world XZ (forward when yaw=0 is -Z)
+        x: 0,
+        z: 18.2,
+        yaw: 0,                // radians; +yaw = nose turns left (CCW in XZ)
+        speed: 0,              // m/s (signed: + forward, - reverse)
+        steerAngle: 0,         // wheel angle radians (-maxSteer to +maxSteer); +steer = wheel turned right -> rear turns left
+        wheelVisualDeg: 0,     // -540 to +540 steering wheel rotation deg
+
+        // Hydraulics
+        forkHeight: 0.05,      // meters (0.04 to 2.20)
+        mastTiltDeg: 0,        // degrees (-10 backward to +8 forward)
+        liftInput: 0,          // -1 (down/lower), 0, +1 (up/raise)
+        tiltInput: 0,          // -1 (backward), 0, +1 (forward)
+
+        // Controls
+        gear: 'N',             // 'F' | 'N' | 'R'
+        seatbelt: false,
+        parkingBrake: true,
+        handSignaled: false,
+        handSignalTimer: 0,
+        pedals: {
+          inch: false,
+          brake: false,
+          throttle: false
+        },
+
+        // Exam progress
+        stage: 0,              // 0: start prep, 1: S forward, 2: endpoint stop, 3: S reverse, 4: finished
+        timerSec: 0,
+        timerRunning: false,
+        lineTouches: 0,
+        coneHits: 0,
+        wasOutOfLine: false,
+        endpointDwell: 0,
+        startReturnDwell: 0,
+        progressPct: 0
+      };
+
+      var MAX_WHEEL_DEG = 540;
+      var MAX_REAR_STEER_RAD = THREE.MathUtils.degToRad(46);
+      var WHEELBASE = 1.65;
+      var LANE_HALF_WIDTH = 1.90;
+
+      /* =====================================================================
+         2. WEB AUDIO SYNTHESIS (NO EXTERNAL AUDIO FILES)
+         ===================================================================== */
+      var audioCtx = null;
+      var beepTimer = 0;
+
+      function ensureAudio() {
+        if (!appState.soundEnabled) return null;
+        if (!audioCtx) {
+          var Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) audioCtx = new Ctx();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(function () {});
+        }
+        return audioCtx;
+      }
+
+      function playTone(freq, duration, type, gainVal) {
+        var ctx = ensureAudio();
+        if (!ctx) return;
+        try {
+          var osc = ctx.createOscillator();
+          var g = ctx.createGain();
+          osc.type = type || 'sine';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime);
+          g.gain.setValueAtTime(gainVal || 0.06, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+          osc.connect(g);
+          g.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + duration);
+        } catch (e) {}
+      }
+
+      /* =====================================================================
+         3. S-CURVE COURSE GEOMETRY (WIDE, CLEAN, SPACIOUS)
+         ===================================================================== */
+      var coursePoints = [];
+      var cones = [];
+      var totalCourseLength = 0;
+
+      function buildCoursePath() {
+        coursePoints = [];
+        var stepDist = 0.25;
+
+        function appendStraight(x0, z0, tx, tz, len) {
+          var steps = Math.round(len / stepDist);
+          for (var i = 0; i < steps; i++) {
+            var d = i * stepDist;
+            coursePoints.push({
+              x: x0 + tx * d,
+              z: z0 + tz * d,
+              tx: tx,
+              tz: tz
+            });
+          }
+          return { x: x0 + tx * len, z: z0 + tz * len, tx: tx, tz: tz };
+        }
+
+        function appendArc(p, radius, deltaHeadingRad) {
+          var steps = Math.max(12, Math.round(Math.abs(radius * deltaHeadingRad) / stepDist));
+          // Heading angle theta where tx = sin(theta), tz = -cos(theta)
+          // At theta=0: (0, -1). +theta turns right (+X).
+          var startTheta = Math.atan2(p.tx, -p.tz);
+          var dir = deltaHeadingRad >= 0 ? 1 : -1; // +1 right turn, -1 left turn
+          // Right normal of (tx, tz) is (-tz, tx)
+          var nx = dir * (-p.tz);
+          var nz = dir * p.tx;
+          var cx = p.x + nx * radius;
+          var cz = p.z + nz * radius;
+
+          for (var i = 0; i < steps; i++) {
+            var frac = i / steps;
+            var th = startTheta + deltaHeadingRad * frac;
+            var ttx = Math.sin(th);
+            var ttz = -Math.cos(th);
+            var rnx = dir * (-ttz);
+            var rnz = dir * ttx;
+            coursePoints.push({
+              x: cx - rnx * radius,
+              z: cz - rnz * radius,
+              tx: ttx,
+              tz: ttz
+            });
+          }
+          var endTh = startTheta + deltaHeadingRad;
+          var etx = Math.sin(endTh);
+          var etz = -Math.cos(endTh);
+          var enx = dir * (-etz);
+          var enz = dir * etx;
+          return {
+            x: cx - enx * radius,
+            z: cz - enz * radius,
+            tx: etx,
+            tz: etz
+          };
+        }
+
+        // Classic S-Curve: Start straight -> Left 52° -> Right 104° -> Left 52° -> End straight
+        var p = { x: 0, z: 20.5, tx: 0, tz: -1 };
+        p = appendStraight(p.x, p.z, p.tx, p.tz, 6.5);
+        p = appendArc(p, 7.6, THREE.MathUtils.degToRad(-52));
+        p = appendStraight(p.x, p.z, p.tx, p.tz, 1.5);
+        p = appendArc(p, 7.6, THREE.MathUtils.degToRad(104));
+        p = appendStraight(p.x, p.z, p.tx, p.tz, 1.5);
+        p = appendArc(p, 7.6, THREE.MathUtils.degToRad(-52));
+        p = appendStraight(p.x, p.z, p.tx, p.tz, 7.0);
+        coursePoints.push(p);
+
+        var accum = 0;
+        for (var k = 0; k < coursePoints.length; k++) {
+          if (k > 0) {
+            accum += Math.hypot(coursePoints[k].x - coursePoints[k - 1].x, coursePoints[k].z - coursePoints[k - 1].z);
+          }
+          coursePoints[k].s = accum;
+        }
+        totalCourseLength = accum;
+      }
+
+      function nearestCourseSample(x, z) {
+        var bestIdx = 0;
+        var bestDistSq = Infinity;
+        for (var i = 0; i < coursePoints.length; i++) {
+          var dx = x - coursePoints[i].x;
+          var dz = z - coursePoints[i].z;
+          var d2 = dx * dx + dz * dz;
+          if (d2 < bestDistSq) {
+            bestDistSq = d2;
+            bestIdx = i;
+          }
+        }
+        return {
+          idx: bestIdx,
+          point: coursePoints[bestIdx],
+          dist: Math.sqrt(bestDistSq)
+        };
+      }
+
+      /* =====================================================================
+         4. THREE.JS BRIGHT DAYTIME SCENE + WIDE-VIEW MAST & FORKS
+         ===================================================================== */
+      var renderer, scene, camera;
+      var mastTiltGroup, forkCarriageGroup, handMeshGroup;
+      var startPoint, endPoint;
+
+      function createAsphaltTexture() {
+        var c = document.createElement('canvas');
+        c.width = 512;
+        c.height = 512;
+        var g = c.getContext('2d');
+        g.fillStyle = '#c8cdd1';
+        g.fillRect(0, 0, 512, 512);
+        // Subtle clean concrete aggregate speckle
+        for (var i = 0; i < 3600; i++) {
+          var x = (i * 73) % 512;
+          var y = (i * 139 + Math.floor(i / 7)) % 512;
+          g.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.16)' : 'rgba(120,130,140,0.12)';
+          g.fillRect(x, y, 2, 2);
+        }
+        // Clean concrete expansion joint grid
+        g.strokeStyle = 'rgba(130,138,145,0.22)';
+        g.lineWidth = 2;
+        g.strokeRect(1, 1, 510, 510);
+        g.beginPath();
+        g.moveTo(256, 0); g.lineTo(256, 512);
+        g.moveTo(0, 256); g.lineTo(512, 256);
+        g.stroke();
+
+        var tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(34, 34);
+        tex.anisotropy = 4;
+        return tex;
+      }
+
+      function createStopLineCanvasTexture(text, bgColor) {
+        var c = document.createElement('canvas');
+        c.width = 512;
+        c.height = 128;
+        var g = c.getContext('2d');
+        g.fillStyle = bgColor;
+        g.fillRect(0, 0, 512, 128);
+        g.strokeStyle = '#ffd500';
+        g.lineWidth = 8;
+        g.strokeRect(6, 6, 500, 116);
+        g.fillStyle = '#ffd500';
+        g.font = '700 44px sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(text, 256, 66);
+        return new THREE.CanvasTexture(c);
+      }
+
+      function buildRibbonMesh(offsetSign, width, yPos, colorHex) {
+        var positions = [];
+        var indices = [];
+        var halfW = width * 0.5;
+        for (var i = 0; i < coursePoints.length; i++) {
+          var pt = coursePoints[i];
+          var rx = -pt.tz; // right normal
+          var rz = pt.tx;
+          var centerOff = offsetSign * (LANE_HALF_WIDTH + halfW);
+          var cx = pt.x + rx * centerOff;
+          var cz = pt.z + rz * centerOff;
+          positions.push(cx - rx * halfW, yPos, cz - rz * halfW);
+          positions.push(cx + rx * halfW, yPos, cz + rz * halfW);
+          if (i < coursePoints.length - 1) {
+            var base = i * 2;
+            indices.push(base, base + 1, base + 2);
+            indices.push(base + 1, base + 3, base + 2);
+          }
+        }
+        var geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        var mat = new THREE.MeshStandardMaterial({
+          color: colorHex,
+          roughness: 0.55,
+          metalness: 0.05
+        });
+        return new THREE.Mesh(geo, mat);
+      }
+
+      function buildLaneFillMesh() {
+        var positions = [];
+        var indices = [];
+        for (var i = 0; i < coursePoints.length; i++) {
+          var pt = coursePoints[i];
+          var rx = -pt.tz;
+          var rz = pt.tx;
+          positions.push(pt.x - rx * LANE_HALF_WIDTH, 0.008, pt.z - rz * LANE_HALF_WIDTH);
+          positions.push(pt.x + rx * LANE_HALF_WIDTH, 0.008, pt.z + rz * LANE_HALF_WIDTH);
+          if (i < coursePoints.length - 1) {
+            var b = i * 2;
+            indices.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+          }
+        }
+        var geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        var mat = new THREE.MeshStandardMaterial({
+          color: 0xb6bcc2,
+          roughness: 0.88,
+          metalness: 0.02
+        });
+        var m = new THREE.Mesh(geo, mat);
+        m.receiveShadow = true;
+        return m;
+      }
+
+      function createTrafficCone(x, z) {
+        var group = new THREE.Group();
+        group.position.set(x, 0, z);
+
+        var baseMat = new THREE.MeshStandardMaterial({ color: 0x222629, roughness: 0.7 });
+        var base = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.045, 0.38), baseMat);
+        base.position.y = 0.0225;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        group.add(base);
+
+        var coneMat = new THREE.MeshStandardMaterial({ color: 0xff5a00, roughness: 0.42 });
+        var body = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.145, 0.68, 16), coneMat);
+        body.position.y = 0.385;
+        body.castShadow = true;
+        group.add(body);
+
+        var stripeMat = new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.3 });
+        var stripe1 = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.095, 0.14, 16), stripeMat);
+        stripe1.position.y = 0.49;
+        group.add(stripe1);
+
+        var stripe2 = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.123, 0.10, 16), stripeMat);
+        stripe2.position.y = 0.27;
+        group.add(stripe2);
+
+        scene.add(group);
+        cones.push({
+          x: x,
+          z: z,
+          mesh: group,
+          hit: false,
+          wobble: 0
+        });
+      }
+
+      function buildEnvironmentDecor() {
+        // Bright sunny perimeter training warehouse walls / fence & sky landmarks for spatial speed sense
+        var wallMat = new THREE.MeshStandardMaterial({ color: 0xe6ebf0, roughness: 0.85 });
+        var trimMat = new THREE.MeshStandardMaterial({ color: 0x3b6e8c, roughness: 0.7 });
+
+        var backWall = new THREE.Mesh(new THREE.BoxGeometry(90, 6.5, 1), wallMat);
+        backWall.position.set(0, 3.25, -38);
+        backWall.receiveShadow = true;
+        scene.add(backWall);
+
+        var trim = new THREE.Mesh(new THREE.BoxGeometry(90, 0.6, 1.06), trimMat);
+        trim.position.set(0, 6.2, -38);
+        scene.add(trim);
+
+        // Training safety bollards and distant stacked pallets for depth cues
+        var palletWood = new THREE.MeshStandardMaterial({ color: 0xc49a6c, roughness: 0.85 });
+        var palletCoords = [
+          [-16, -24], [-13.5, -24], [12, -22], [15, -22],
+          [11, 8], [-15, 6], [13, 18]
+        ];
+        for (var i = 0; i < palletCoords.length; i++) {
+          var stack = new THREE.Group();
+          stack.position.set(palletCoords[i][0], 0, palletCoords[i][1]);
+          for (var layer = 0; layer < 3; layer++) {
+            var p = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 1.1), palletWood);
+            p.position.y = 0.075 + layer * 0.16;
+            p.castShadow = true;
+            p.receiveShadow = true;
+            stack.add(p);
+          }
+          scene.add(stack);
+        }
+
+        // Subtle trees along outer yard perimeter
+        var trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5c43, roughness: 0.9 });
+        var leafMat = new THREE.MeshStandardMaterial({ color: 0x559e54, roughness: 0.75 });
+        var treeSpots = [[-28, 22], [-30, 0], [-28, -22], [24, 20], [26, -4], [24, -24]];
+        for (var t = 0; t < treeSpots.length; t++) {
+          var tree = new THREE.Group();
+          tree.position.set(treeSpots[t][0], 0, treeSpots[t][1]);
+          var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 2.4, 8), trunkMat);
+          trunk.position.y = 1.2;
+          trunk.castShadow = true;
+          tree.add(trunk);
+          var crown = new THREE.Mesh(new THREE.DodecahedronGeometry(1.75, 1), leafMat);
+          crown.position.y = 3.5;
+          crown.castShadow = true;
+          tree.add(crown);
+          scene.add(tree);
+        }
+      }
+
+      /* =====================================================================
+         FIRST-PERSON FORKLIFT RIG (MATCHING "寬度視野.jpg":
+         WIDE OPEN MAST CHANNELS, NO FRONT GLASS/MIRROR, CLEAR DUAL FORKS)
+         ===================================================================== */
+      function buildFirstPersonForkliftRig() {
+        var forkliftRig = new THREE.Group();
+
+        // Driver eye height = 1.48m above ground, z = 0 is driver eye reference
+        // Front cowl / hood sits low below sightline
+        var bodyPaint = new THREE.MeshStandardMaterial({ color: 0xe68a00, roughness: 0.45, metalness: 0.15 });
+        var darkSteel = new THREE.MeshStandardMaterial({ color: 0x262b30, roughness: 0.55, metalness: 0.4 });
+        var forkSteel = new THREE.MeshStandardMaterial({ color: 0x454d54, roughness: 0.4, metalness: 0.65 });
+        var safetyYellow = new THREE.MeshStandardMaterial({ color: 0xffd000, roughness: 0.4 });
+
+        // Low front dashboard cowl (well below horizon so front floor & lines stay wide open)
+        var cowl = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.42, 0.55), darkSteel);
+        cowl.position.set(0, 0.76, -0.62);
+        forkliftRig.add(cowl);
+
+        // Front fenders on far left/right
+        var fenderL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.65), bodyPaint);
+        fenderL.position.set(-0.62, 0.72, -0.78);
+        forkliftRig.add(fenderL);
+
+        var fenderR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.65), bodyPaint);
+        fenderR.position.set(0.62, 0.72, -0.78);
+        forkliftRig.add(fenderR);
+
+        // Outer overhead guard pillars (far edges at x = ±0.66m, completely clear center!)
+        var pillarGeo = new THREE.BoxGeometry(0.065, 1.38, 0.065);
+        var pillarFL = new THREE.Mesh(pillarGeo, darkSteel);
+        pillarFL.position.set(-0.66, 1.52, -0.65);
+        pillarFL.rotation.x = -0.18;
+        forkliftRig.add(pillarFL);
+
+        var pillarFR = new THREE.Mesh(pillarGeo, darkSteel);
+        pillarFR.position.set(0.66, 1.52, -0.65);
+        pillarFR.rotation.x = -0.18;
+        forkliftRig.add(pillarFR);
+
+        // High overhead roof frame (above eye level y = 2.15m, NO mirror, NO front baffle)
+        var roofHeader = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.06, 0.08), darkSteel);
+        roofHeader.position.set(0, 2.16, -0.52);
+        forkliftRig.add(roofHeader);
+
+        // Tilting Mast Assembly (pivot at front axle y = 0.34, z = -1.08)
+        mastTiltGroup = new THREE.Group();
+        mastTiltGroup.position.set(0, 0.34, -1.08);
+        forkliftRig.add(mastTiltGroup);
+
+        // WIDE outer mast rails at x = ±0.58m so center view is spacious and unobstructed
+        var mastRailGeo = new THREE.BoxGeometry(0.085, 2.55, 0.11);
+        var mastLeft = new THREE.Mesh(mastRailGeo, darkSteel);
+        mastLeft.position.set(-0.58, 1.25, 0);
+        mastLeft.castShadow = true;
+        mastTiltGroup.add(mastLeft);
+
+        var mastRight = new THREE.Mesh(mastRailGeo, darkSteel);
+        mastRight.position.set(0.58, 1.25, 0);
+        mastRight.castShadow = true;
+        mastTiltGroup.add(mastRight);
+
+        // Top & bottom mast crossbars (top crossbar high at y = 2.48m, bottom low at y = 0.06m)
+        var topTie = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.08, 0.10), darkSteel);
+        topTie.position.set(0, 2.48, 0);
+        mastTiltGroup.add(topTie);
+
+        var lowTie = new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.10, 0.12), darkSteel);
+        lowTie.position.set(0, 0.06, 0);
+        mastTiltGroup.add(lowTie);
+
+        // Yellow height reference band on left mast (marks ~18cm travel height)
+        var heightMark = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.05, 0.12), safetyYellow);
+        heightMark.position.set(-0.58, 0.22, 0);
+        mastTiltGroup.add(heightMark);
+
+        // Fork Carriage Group (moves vertically along mast!)
+        forkCarriageGroup = new THREE.Group();
+        forkCarriageGroup.position.set(0, 0.05, -0.07);
+        mastTiltGroup.add(forkCarriageGroup);
+
+        // Carriage bars (open backrest design so view through carriage remains clear!)
+        var barTop = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.075, 0.05), darkSteel);
+        barTop.position.set(0, 0.42, 0);
+        barTop.castShadow = true;
+        forkCarriageGroup.add(barTop);
+
+        var barMid = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.075, 0.05), darkSteel);
+        barMid.position.set(0, 0.06, 0);
+        barMid.castShadow = true;
+        forkCarriageGroup.add(barMid);
+
+        // Left & Right backrest side posts (wide open in the middle)
+        var brL = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.72, 0.045), darkSteel);
+        brL.position.set(-0.48, 0.42, 0.01);
+        forkCarriageGroup.add(brL);
+
+        var brR = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.72, 0.045), darkSteel);
+        brR.position.set(0.48, 0.42, 0.01);
+        forkCarriageGroup.add(brR);
+
+        // Dual Forks (spaced at x = ±0.31m, length = 1.12m forward, clearly visible!)
+        var forkPositions = [-0.31, 0.31];
+        for (var f = 0; f < forkPositions.length; f++) {
+          var fx = forkPositions[f];
+          var forkShank = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.46, 0.045), forkSteel);
+          forkShank.position.set(fx, 0.20, -0.045);
+          forkShank.castShadow = true;
+          forkCarriageGroup.add(forkShank);
+
+          // Tapered horizontal blade
+          var forkBlade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.042, 1.12), forkSteel);
+          forkBlade.position.set(fx, -0.01, -0.60);
+          forkBlade.castShadow = true;
+          forkBlade.receiveShadow = true;
+          forkCarriageGroup.add(forkBlade);
+
+          // High-visibility safety tip on fork ends for precision depth judgment
+          var forkTip = new THREE.Mesh(new THREE.BoxGeometry(0.112, 0.044, 0.10), safetyYellow);
+          forkTip.position.set(fx, -0.01, -1.12);
+          forkCarriageGroup.add(forkTip);
+        }
+
+        // Animated 3D Hand Raise Gesture (right side of cab when pressing G)
+        handMeshGroup = new THREE.Group();
+        handMeshGroup.position.set(0.56, 1.05, -0.45);
+        handMeshGroup.visible = false;
+        var armMat = new THREE.MeshStandardMaterial({ color: 0x2c5b84, roughness: 0.7 });
+        var gloveMat = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.6 });
+        var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.048, 0.48, 12), armMat);
+        arm.position.y = 0.24;
+        handMeshGroup.add(arm);
+        var palm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.13, 0.035), gloveMat);
+        palm.position.y = 0.54;
+        handMeshGroup.add(palm);
+        forkliftRig.add(handMeshGroup);
+
+        // Camera positioned at driver's eye level inside open cab
+        camera.position.set(0, 1.48, 0.05);
+        camera.rotation.set(-0.16, 0, 0); // slight downward pitch to see both forks & wide S-curve ahead
+        forkliftRig.add(camera);
+
+        scene.add(forkliftRig);
+        return forkliftRig;
+      }
+
+      var forkliftRig;
+
+      function initScene() {
+        var canvas = document.getElementById('gl-canvas');
+        if (!canvas) return;
+
+        renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x9bd2f2);
+        scene.fog = new THREE.Fog(0xaad9f5, 45, 115);
+
+        camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.08, 160);
+
+        // Bright, Clear Daytime Sunlight
+        var hemiLight = new THREE.HemisphereLight(0xeef8ff, 0x9aa3a8, 0.92);
+        scene.add(hemiLight);
+
+        var sunLight = new THREE.DirectionalLight(0xfff9ed, 1.55);
+        sunLight.position.set(24, 42, 20);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 5;
+        sunLight.shadow.camera.far = 110;
+        sunLight.shadow.camera.left = -32;
+        sunLight.shadow.camera.right = 32;
+        sunLight.shadow.camera.top = 32;
+        sunLight.shadow.camera.bottom = -32;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // Ground Plane (Clean light-gray paved training yard)
+        var groundGeo = new THREE.PlaneGeometry(140, 140);
+        var groundMat = new THREE.MeshStandardMaterial({
+          map: createAsphaltTexture(),
+          roughness: 0.85,
+          metalness: 0.03
+        });
+        var ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Build S-Curve Track + Yellow Boundary Lines + Spacious Orange Cones
+        buildCoursePath();
+        scene.add(buildLaneFillMesh());
+        scene.add(buildRibbonMesh(-1, 0.16, 0.015, 0xffd000));
+        scene.add(buildRibbonMesh(1, 0.16, 0.015, 0xffd000));
+
+        startPoint = coursePoints[6];
+        endPoint = coursePoints[coursePoints.length - 10];
+
+        // Start & Finish zone floor markings
+        var startMat = new THREE.MeshStandardMaterial({
+          map: createStopLineCanvasTexture('START 起點線', '#687078'),
+          roughness: 0.65
+        });
+        var startBox = new THREE.Mesh(new THREE.PlaneGeometry(LANE_HALF_WIDTH * 1.9, 1.0), startMat);
+        startBox.rotation.x = -Math.PI / 2;
+        startBox.position.set(startPoint.x, 0.016, startPoint.z - 1.5);
+        scene.add(startBox);
+
+        var endMat = new THREE.MeshStandardMaterial({
+          map: createStopLineCanvasTexture('STOP 終點區', '#4f6473'),
+          roughness: 0.65
+        });
+        var endBox = new THREE.Mesh(new THREE.PlaneGeometry(LANE_HALF_WIDTH * 1.9, 1.2), endMat);
+        endBox.rotation.x = -Math.PI / 2;
+        endBox.position.set(endPoint.x, 0.016, endPoint.z);
+        scene.add(endBox);
+
+        // Place Orange Cones along both outer sides at generous spacing (~2.8m)
+        var coneSpacing = 2.8;
+        var lastConeS = -999;
+        for (var i = 2; i < coursePoints.length - 2; i++) {
+          var pt = coursePoints[i];
+          if (pt.s - lastConeS >= coneSpacing) {
+            lastConeS = pt.s;
+            var rx = -pt.tz;
+            var rz = pt.tx;
+            var coneOffset = LANE_HALF_WIDTH + 0.34;
+            createTrafficCone(pt.x - rx * coneOffset, pt.z - rz * coneOffset);
+            createTrafficCone(pt.x + rx * coneOffset, pt.z + rz * coneOffset);
+          }
+        }
+
+        buildEnvironmentDecor();
+        forkliftRig = buildFirstPersonForkliftRig();
+      }
+
+      /* =====================================================================
+         5. HUD UPDATES & MINIMAP
+         ===================================================================== */
+      var toastTimeout = null;
+
+      function showToast(msg, variant) {
+        var el = document.getElementById('hud-toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.className = 'hud-toast is-visible';
+        if (variant === 'error') el.classList.add('is-error');
+        if (variant === 'good') el.classList.add('is-good');
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(function () {
+          el.classList.remove('is-visible');
+        }, 2200);
+      }
+
+      function formatTime(sec) {
+        var s = Math.max(0, Math.floor(sec));
+        var m = Math.floor(s / 60);
+        var r = s % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+      }
+
+      function updateHUD() {
+        var speedEl = document.getElementById('val-speed');
+        if (speedEl) speedEl.textContent = (Math.abs(sim.speed) * 3.6).toFixed(1) + ' km/h';
+
+        var forkCm = Math.round(sim.forkHeight * 100);
+        var forkEl = document.getElementById('val-fork-h');
+        if (forkEl) {
+          forkEl.textContent = forkCm + ' cm';
+          forkEl.className = 'metric-val ' + (forkCm >= 12 && forkCm <= 25 ? 'is-good' : (forkCm > 35 ? 'is-warn' : ''));
+        }
+
+        var tiltEl = document.getElementById('val-tilt');
+        if (tiltEl) {
+          var dirStr = sim.mastTiltDeg < -0.5 ? '後傾 ' : (sim.mastTiltDeg > 0.5 ? '前傾 ' : '');
+          tiltEl.textContent = dirStr + Math.abs(sim.mastTiltDeg).toFixed(1) + '°';
+          tiltEl.className = 'metric-val ' + (sim.mastTiltDeg <= -3 ? 'is-good' : '');
+        }
+
+        var penEl = document.getElementById('val-penalties');
+        if (penEl) {
+          penEl.textContent = sim.lineTouches + ' / ' + sim.coneHits;
+          penEl.className = 'metric-val ' + (sim.lineTouches + sim.coneHits === 0 ? 'is-good' : 'is-bad');
+        }
+
+        var timerEl = document.getElementById('val-timer');
+        if (timerEl) timerEl.textContent = formatTime(sim.timerSec);
+
+        var steerEl = document.getElementById('val-steer');
+        if (steerEl) {
+          var deg = Math.round(sim.wheelVisualDeg);
+          var tag = deg > 4 ? '右轉 ' : (deg < -4 ? '左轉 ' : '回正 ');
+          steerEl.textContent = tag + Math.abs(deg) + '°';
+        }
+
+        var wheelEl = document.getElementById('steering-wheel');
+        if (wheelEl) {
+          wheelEl.style.transform = 'rotate(' + sim.wheelVisualDeg.toFixed(1) + 'deg)';
+        }
+
+        // Gear highlight
+        var gears = ['F', 'N', 'R'];
+        for (var i = 0; i < gears.length; i++) {
+          var gBtn = document.getElementById('gear-' + gears[i]);
+          if (gBtn) {
+            if (sim.gear === gears[i]) gBtn.classList.add('is-selected');
+            else gBtn.classList.remove('is-selected');
+          }
+        }
+
+        // Safety switches
+        var beltBtn = document.getElementById('btn-belt');
+        if (beltBtn) {
+          beltBtn.className = 'safety-btn ' + (sim.seatbelt ? 'is-ok' : 'is-warn');
+        }
+        var parkBtn = document.getElementById('btn-park');
+        if (parkBtn) {
+          parkBtn.className = 'safety-btn ' + (sim.parkingBrake ? 'is-warn' : 'is-ok');
+        }
+        var handBtn = document.getElementById('btn-hand');
+        if (handBtn) {
+          handBtn.className = 'safety-btn ' + (sim.handSignaled ? 'is-active' : '');
+        }
+
+        // Hydraulic lever visuals
+        updateLeverVisual('lift', sim.liftInput);
+        updateLeverVisual('tilt', sim.tiltInput);
+
+        // Stage guidance text
+        var stageTextEl = document.getElementById('stage-text');
+        var stageDotEl = document.getElementById('stage-dot');
+        if (stageTextEl && stageDotEl) {
+          if (appState.mode === 'free') {
+            stageTextEl.textContent = '自由練習模式：無扣分限制，可隨時練習 S 型前進、倒車與貨叉操作';
+            stageDotEl.className = 'stage-dot';
+          } else if (sim.stage === 0) {
+            stageTextEl.textContent = '階段 1 起點：繫安全帶(B) → 升叉15~20cm並後傾 → 舉手(G) → 放手煞車(P)入F檔';
+            stageDotEl.className = 'stage-dot is-warn';
+          } else if (sim.stage === 1) {
+            stageTextEl.textContent = '階段 2 S 型前進中（進度 ' + Math.round(sim.progressPct) + '%）：請保持車身居中避免壓線';
+            stageDotEl.className = 'stage-dot';
+          } else if (sim.stage === 2) {
+            stageTextEl.textContent = '階段 3 已達終點區！請停車後舉手示意(G)，再排入 R 檔開始 S 型倒車';
+            stageDotEl.className = 'stage-dot is-good';
+          } else if (sim.stage === 3) {
+            stageTextEl.textContent = '階段 4 S 型倒車回起點（剩餘 ' + Math.round(sim.progressPct) + '%）：善用吋動踏板微調';
+            stageDotEl.className = 'stage-dot';
+          } else {
+            stageTextEl.textContent = '階段 5 完賽！請降叉著地平放並拉起手煞車(P)';
+            stageDotEl.className = 'stage-dot is-good';
+          }
+        }
+      }
+
+      function updateLeverVisual(type, val) {
+        var knob = document.getElementById(type === 'lift' ? 'lift-knob' : 'tilt-knob');
+        var zoneUp = document.getElementById(type === 'lift' ? 'lift-zone-up' : 'tilt-zone-up');
+        var zoneDown = document.getElementById(type === 'lift' ? 'lift-zone-down' : 'tilt-zone-down');
+        if (!knob || !zoneUp || !zoneDown) return;
+
+        // Note: For Lift Lever, pressing UP (top zone) lowers forks (-1), pressing DOWN (bottom zone) raises forks (+1)
+        // For Tilt Lever, pressing UP (top zone) tilts forward (+1), pressing DOWN (bottom zone) tilts backward (-1)
+        var topActive = (type === 'lift' && val === -1) || (type === 'tilt' && val === 1);
+        var bottomActive = (type === 'lift' && val === 1) || (type === 'tilt' && val === -1);
+
+        if (topActive) {
+          knob.style.top = '22%';
+          zoneUp.classList.add('is-engaged');
+          zoneDown.classList.remove('is-engaged');
+        } else if (bottomActive) {
+          knob.style.top = '78%';
+          zoneUp.classList.remove('is-engaged');
+          zoneDown.classList.add('is-engaged');
+        } else {
+          knob.style.top = '50%';
+          zoneUp.classList.remove('is-engaged');
+          zoneDown.classList.remove('is-engaged');
+        }
+      }
+
+      function drawMinimap() {
+        var mc = document.getElementById('minimap-canvas');
+        if (!mc) return;
+        var ctx = mc.getContext('2d');
+        var w = mc.width;
+        var h = mc.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Map world x: [-14, 14], z: [-22, 22] into 128x128
+        function toMX(wx) { return w * 0.5 + wx * 3.0; }
+        function toMY(wz) { return h * 0.5 + wz * 2.55; }
+
+        // Draw S-curve lane centerline
+        ctx.strokeStyle = 'rgba(255, 208, 0, 0.85)';
+        ctx.lineWidth = 7;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        for (var i = 0; i < coursePoints.length; i += 4) {
+          var pt = coursePoints[i];
+          var mx = toMX(pt.x);
+          var my = toMY(pt.z);
+          if (i === 0) ctx.moveTo(mx, my);
+          else ctx.lineTo(mx, my);
+        }
+        ctx.stroke();
+
+        // Start & End dots
+        if (startPoint) {
+          ctx.fillStyle = '#87d69b';
+          ctx.beginPath();
+          ctx.arc(toMX(startPoint.x), toMY(startPoint.z), 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (endPoint) {
+          ctx.fillStyle = '#63c7d6';
+          ctx.beginPath();
+          ctx.arc(toMX(endPoint.x), toMY(endPoint.z), 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Forklift arrow marker
+        var fx = toMX(sim.x);
+        var fy = toMY(sim.z);
+        ctx.save();
+        ctx.translate(fx, fy);
+        // sim.yaw = 0 faces -Z (up on minimap -> -Y)
+        ctx.rotate(-sim.yaw);
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#0c1214';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, -7);
+        ctx.lineTo(5, 5);
+        ctx.lineTo(0, 2.5);
+        ctx.lineTo(-5, 5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      /* =====================================================================
+         6. CONTROL HANDLERS (HOISTED FUNCTIONS)
+         ===================================================================== */
+      function recenterWheel() {
+        sim.wheelVisualDeg = 0;
+        sim.steerAngle = 0;
+        playTone(520, 0.08, 'triangle', 0.04);
+      }
+
+      function setGear(g) {
+        if (sim.gear === g) return;
+        sim.gear = g;
+        playTone(g === 'N' ? 320 : 440, 0.09, 'sine', 0.05);
+        if (g === 'R') {
+          showToast('已排入倒車檔 (R)，請留意後方角錐', '');
+        }
+        updateHUD();
+      }
+
+      function toggleSeatbelt() {
+        sim.seatbelt = !sim.seatbelt;
+        playTone(sim.seatbelt ? 660 : 300, 0.1, 'sine', 0.05);
+        showToast(sim.seatbelt ? '安全帶已繫妥' : '安全帶已解開', sim.seatbelt ? 'good' : 'error');
+        updateHUD();
+      }
+
+      function toggleParkingBrake() {
+        sim.parkingBrake = !sim.parkingBrake;
+        playTone(sim.parkingBrake ? 280 : 480, 0.1, 'square', 0.04);
+        showToast(sim.parkingBrake ? '手煞車已拉起 (鎖定)' : '手煞車已解除', sim.parkingBrake ? '' : 'good');
+        updateHUD();
+      }
+
+      function triggerHandSignal() {
+        sim.handSignaled = true;
+        sim.handSignalTimer = 2.6;
+        if (handMeshGroup) handMeshGroup.visible = true;
+        var badge = document.getElementById('hand-signal-badge');
+        if (badge) badge.classList.add('is-visible');
+        playTone(740, 0.12, 'triangle', 0.05);
+        showToast('已舉手示意並確認周圍安全！', 'good');
+
+        if (appState.mode === 'exam' && sim.stage === 2) {
+          showToast('終點示意完成！請排入 R 檔倒車回起點', 'good');
+        }
+        updateHUD();
+      }
+
+      function toggleMode() {
+        appState.mode = appState.mode === 'exam' ? 'free' : 'exam';
+        var btn = document.getElementById('btn-mode');
+        var lbl = document.getElementById('mode-label');
+        if (btn) btn.textContent = appState.mode === 'exam' ? '考照' : '自由';
+        if (lbl) lbl.textContent = appState.mode === 'exam' ? '考照實作模式' : '自由練習模式';
+        savePersistentState();
+        resetSimulation();
+      }
+
+      function toggleSound() {
+        appState.soundEnabled = !appState.soundEnabled;
+        var btn = document.getElementById('btn-sound');
+        if (btn) {
+          btn.classList.toggle('is-active', appState.soundEnabled);
+          btn.textContent = appState.soundEnabled ? '音效' : '靜音';
+        }
+        if (appState.soundEnabled) playTone(580, 0.08, 'sine', 0.04);
+        savePersistentState();
+      }
+
+      function resetSimulation() {
+        sim.x = 0;
+        sim.z = 18.2;
+        sim.yaw = 0;
+        sim.speed = 0;
+        sim.steerAngle = 0;
+        sim.wheelVisualDeg = 0;
+        sim.forkHeight = 0.05;
+        sim.mastTiltDeg = 0;
+        sim.liftInput = 0;
+        sim.tiltInput = 0;
+        sim.gear = 'N';
+        sim.seatbelt = false;
+        sim.parkingBrake = true;
+        sim.handSignaled = false;
+        sim.handSignalTimer = 0;
+        sim.stage = 0;
+        sim.timerSec = 0;
+        sim.timerRunning = false;
+        sim.lineTouches = 0;
+        sim.coneHits = 0;
+        sim.wasOutOfLine = false;
+        sim.endpointDwell = 0;
+        sim.startReturnDwell = 0;
+        sim.progressPct = 0;
+
+        for (var i = 0; i < cones.length; i++) {
+          cones[i].hit = false;
+          cones[i].wobble = 0;
+          cones[i].mesh.rotation.set(0, 0, 0);
+        }
+        if (handMeshGroup) handMeshGroup.visible = false;
+        closeModal();
+        showToast('考場已重置，請依序完成起步檢查', '');
+        updateHUD();
+      }
+
+      function openHelpModal() {
+        var modal = document.getElementById('info-modal');
+        var title = document.getElementById('modal-title');
+        var body = document.getElementById('modal-body');
+        var actions = document.getElementById('modal-actions');
+        if (!modal || !title || !body || !actions) return;
+
+        title.textContent = '操作說明與第二站 S 型考照要領';
+        var bestStr = appState.bestTimeSec !== null ? formatTime(appState.bestTimeSec) : '尚無紀錄';
+        body.innerHTML = [
+          `<div class="modal-grid">`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">最佳完賽時間</div><div class="stat-tile-val">${bestStr}</div></div>`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">累積完賽次數</div><div class="stat-tile-val">${appState.completedRuns} 次</div></div>`,
+          `</div>`,
+          `<ul class="guide-list">`,
+          `<li><strong>方向盤與回正 (X)：</strong>左手大拇指旋轉方向盤，點擊正中央 <strong>回正 (X)</strong> 按鈕可立即回正後輪。</li>`,
+          `<li><strong>排檔桿與安全操作：</strong>起步前先繫上<strong>安全帶 (B)</strong>、<strong>舉手示意 (G)</strong>、解除<strong>手煞車 (P)</strong>，再排入 <strong>F 前進 / R 退後</strong>。</li>`,
+          `<li><strong>右側升降桿 (I/K)：</strong>按<strong>「下」</strong>為貨叉<strong>上升 (UP)</strong>；按<strong>「上」</strong>為貨叉<strong>下降 (DOWN)</strong>。行駛中建議離地 15~20 cm。</li>`,
+          `<li><strong>右側傾斜桿 (J/L)：</strong>按<strong>「上」</strong>為門架<strong>前傾 (Forward)</strong>；按<strong>「下」</strong>為門架<strong>後傾 (Backward)</strong>。</li>`,
+          `<li><strong>三踏板：</strong><strong>吋動 (Shift)</strong> 可極慢速精準微調進彎；<strong>煞車 (Space)</strong> 減速；<strong>油門 (W/↑)</strong> 加速。</li>`,
+          `</ul>`
+        ].join('');
+
+        actions.innerHTML = `<button type="button" class="primary-btn" onclick="closeModal()">返回模擬駕駛</button>`;
+        modal.classList.add('is-open');
+      }
+
+      function showExamCompleteModal() {
+        var modal = document.getElementById('info-modal');
+        var title = document.getElementById('modal-title');
+        var body = document.getElementById('modal-body');
+        var actions = document.getElementById('modal-actions');
+        if (!modal || !title || !body || !actions) return;
+
+        var passed = sim.lineTouches === 0 && sim.coneHits === 0;
+        title.textContent = passed ? 'S 型考照挑戰合格！' : 'S 型路線完成（可再精進）';
+        body.innerHTML = [
+          `<div class="modal-grid">`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">完賽總時間</div><div class="stat-tile-val">${formatTime(sim.timerSec)}</div></div>`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">成績判定</div><div class="stat-tile-val">${passed ? '零失誤通過' : '有壓線/碰錐'}</div></div>`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">壓黃線次數</div><div class="stat-tile-val">${sim.lineTouches} 次</div></div>`,
+          `<div class="stat-tile"><div class="stat-tile-lbl">碰撞角錐數</div><div class="stat-tile-val">${sim.coneHits} 支</div></div>`,
+          `</div>`,
+          `<p style="margin:0;color:var(--on-surface-variant);font-size:0.9375rem;">請記得將貨叉降至地面平放、排入空檔 (N) 並拉起手煞車 (P)，完成技術士標準停車動作。</p>`
+        ].join('');
+
+        actions.innerHTML = [
+          `<button type="button" class="secondary-btn" onclick="closeModal()">留在現場停車</button>`,
+          `<button type="button" class="primary-btn" onclick="resetSimulation()">再挑戰一次</button>`
+        ].join('');
+        modal.classList.add('is-open');
+      }
+
+      function closeModal() {
+        var modal = document.getElementById('info-modal');
+        if (modal) modal.classList.remove('is-open');
+      }
+
+      /* =====================================================================
+         7. MULTI-TOUCH & POINTER INPUT BINDING (ZERO LATENCY MOBILE + DESKTOP)
+         ===================================================================== */
+      function bindInputEvents() {
+        // --- Steering Wheel Multi-Touch / Pointer Drag ---
+        var wheelWrap = document.getElementById('wheel-wrap');
+        var centerBtn = document.getElementById('btn-recenter');
+        var activeWheelPointerId = null;
+        var prevWheelAngle = 0;
+
+        function getAngleFromCenter(clientX, clientY) {
+          var rect = wheelWrap.getBoundingClientRect();
+          var cx = rect.left + rect.width * 0.5;
+          var cy = rect.top + rect.height * 0.5;
+          return Math.atan2(clientY - cy, clientX - cx);
+        }
+
+        if (wheelWrap) {
+          wheelWrap.addEventListener('pointerdown', function (e) {
+            if (centerBtn && (e.target === centerBtn || centerBtn.contains(e.target))) return;
+            e.preventDefault();
+            ensureAudio();
+            activeWheelPointerId = e.pointerId;
+            if (wheelWrap.setPointerCapture) {
+              try { wheelWrap.setPointerCapture(e.pointerId); } catch (err) {}
+            }
+            prevWheelAngle = getAngleFromCenter(e.clientX, e.clientY);
+          }, { passive: false });
+
+          wheelWrap.addEventListener('pointermove', function (e) {
+            if (e.pointerId !== activeWheelPointerId) return;
+            e.preventDefault();
+            var cur = getAngleFromCenter(e.clientX, e.clientY);
+            var delta = cur - prevWheelAngle;
+            if (delta > Math.PI) delta -= Math.PI * 2;
+            if (delta < -Math.PI) delta += Math.PI * 2;
+            prevWheelAngle = cur;
+
+            sim.wheelVisualDeg = THREE.MathUtils.clamp(
+              sim.wheelVisualDeg + THREE.MathUtils.radToDeg(delta),
+              -MAX_WHEEL_DEG,
+              MAX_WHEEL_DEG
+            );
+            sim.steerAngle = (sim.wheelVisualDeg / MAX_WHEEL_DEG) * MAX_REAR_STEER_RAD;
+          }, { passive: false });
+
+          function endWheelDrag(e) {
+            if (e.pointerId === activeWheelPointerId) activeWheelPointerId = null;
+          }
+          wheelWrap.addEventListener('pointerup', endWheelDrag);
+          wheelWrap.addEventListener('pointercancel', endWheelDrag);
+        }
+
+        // --- Hydraulic Levers (Press & Drag in Upper/Lower Zones) ---
+        function setupLever(id, type) {
+          var pad = document.getElementById(id);
+          if (!pad) return;
+          var activeId = null;
+
+          function updateFromPointer(clientY) {
+            var rect = pad.getBoundingClientRect();
+            var relY = (clientY - rect.top) / rect.height; // 0 (top) to 1 (bottom)
+            var isTop = relY < 0.48;
+            var isBottom = relY > 0.52;
+            if (type === 'lift') {
+              // Top = DOWN (-1), Bottom = UP (+1)
+              sim.liftInput = isTop ? -1 : (isBottom ? 1 : 0);
+            } else {
+              // Top = Forward (+1), Bottom = Backward (-1)
+              sim.tiltInput = isTop ? 1 : (isBottom ? -1 : 0);
+            }
+          }
+
+          pad.addEventListener('pointerdown', function (e) {
+            e.preventDefault();
+            ensureAudio();
+            activeId = e.pointerId;
+            if (pad.setPointerCapture) {
+              try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+            }
+            updateFromPointer(e.clientY);
+          }, { passive: false });
+
+          pad.addEventListener('pointermove', function (e) {
+            if (e.pointerId !== activeId) return;
+            e.preventDefault();
+            updateFromPointer(e.clientY);
+          }, { passive: false });
+
+          function releaseLever(e) {
+            if (e.pointerId !== activeId) return;
+            activeId = null;
+            if (type === 'lift') sim.liftInput = 0;
+            else sim.tiltInput = 0;
+          }
+          pad.addEventListener('pointerup', releaseLever);
+          pad.addEventListener('pointercancel', releaseLever);
+        }
+        setupLever('lever-lift', 'lift');
+        setupLever('lever-tilt', 'tilt');
+
+        // --- Pedals (Multi-Touch Holdable) ---
+        function setupPedal(id, key) {
+          var btn = document.getElementById(id);
+          if (!btn) return;
+          var activePointers = {};
+
+          function refreshPedalState() {
+            var any = Object.keys(activePointers).length > 0;
+            sim.pedals[key] = any;
+            btn.classList.toggle('is-pressed', any);
+          }
+
+          btn.addEventListener('pointerdown', function (e) {
+            e.preventDefault();
+            ensureAudio();
+            activePointers[e.pointerId] = true;
+            if (btn.setPointerCapture) {
+              try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+            }
+            refreshPedalState();
+          }, { passive: false });
+
+          function releasePedal(e) {
+            delete activePointers[e.pointerId];
+            refreshPedalState();
+          }
+          btn.addEventListener('pointerup', releasePedal);
+          btn.addEventListener('pointercancel', releasePedal);
+        }
+        setupPedal('pedal-inch', 'inch');
+        setupPedal('pedal-brake', 'brake');
+        setupPedal('pedal-throttle', 'throttle');
+
+        // --- Keyboard Controls (Desktop Parity) ---
+        var keysDown = {};
+        window.addEventListener('keydown', function (e) {
+          var code = e.code;
+          if (code === 'Space' || code === 'ArrowUp' || code === 'ArrowDown' || code === 'ArrowLeft' || code === 'ArrowRight') {
+            e.preventDefault();
+          }
+          keysDown[code] = true;
+
+          if (!e.repeat) {
+            if (code === 'KeyX') recenterWheel();
+            else if (code === 'KeyB') toggleSeatbelt();
+            else if (code === 'KeyG') triggerHandSignal();
+            else if (code === 'KeyP') toggleParkingBrake();
+            else if (code === 'Digit1') setGear('F');
+            else if (code === 'Digit2') setGear('N');
+            else if (code === 'Digit3') setGear('R');
+          }
+          syncKeyboardContinuous(keysDown);
+        });
+
+        window.addEventListener('keyup', function (e) {
+          delete keysDown[e.code];
+          syncKeyboardContinuous(keysDown);
+        });
+
+        window._keysDown = keysDown;
+      }
+
+      function syncKeyboardContinuous(keys) {
+        var inchEl = document.getElementById('pedal-inch');
+        var brakeEl = document.getElementById('pedal-brake');
+        var throtEl = document.getElementById('pedal-throttle');
+
+        sim.pedals.inch = !!(keys['ShiftLeft'] || keys['ShiftRight']);
+        sim.pedals.brake = !!keys['Space'];
+        sim.pedals.throttle = !!(keys['KeyW'] || keys['ArrowUp']);
+
+        if (inchEl) inchEl.classList.toggle('is-pressed', sim.pedals.inch);
+        if (brakeEl) brakeEl.classList.toggle('is-pressed', sim.pedals.brake);
+        if (throtEl) throtEl.classList.toggle('is-pressed', sim.pedals.throttle);
+
+        // Hydraulic keyboard shortcuts: I (up/lower) vs K (down/raise), J (fwd tilt) vs L (bwd tilt)
+        if (keys['KeyK']) sim.liftInput = 1;
+        else if (keys['KeyI']) sim.liftInput = -1;
+        else if (!document.getElementById('lift-zone-up').classList.contains('is-engaged') && !document.getElementById('lift-zone-down').classList.contains('is-engaged')) {
+          sim.liftInput = 0;
+        }
+
+        if (keys['KeyJ']) sim.tiltInput = 1;
+        else if (keys['KeyL']) sim.tiltInput = -1;
+        else if (!document.getElementById('tilt-zone-up').classList.contains('is-engaged') && !document.getElementById('tilt-zone-down').classList.contains('is-engaged')) {
+          sim.tiltInput = 0;
+        }
+      }
+
+      /* =====================================================================
+         8. PHYSICS, HYDRAULICS & EXAM EVALUATION LOOP
+         ===================================================================== */
+      var lastTime = performance.now();
+      var animFrameId = null;
+
+      function stepSimulation(dt) {
+        var keys = window._keysDown || {};
+
+        // Keyboard steering A/D or Left/Right
+        var keySteerDir = 0;
+        if (keys['KeyA'] || keys['ArrowLeft']) keySteerDir -= 1;
+        if (keys['KeyD'] || keys['ArrowRight']) keySteerDir += 1;
+        if (keySteerDir !== 0) {
+          sim.wheelVisualDeg = THREE.MathUtils.clamp(
+            sim.wheelVisualDeg + keySteerDir * 290 * dt,
+            -MAX_WHEEL_DEG,
+            MAX_WHEEL_DEG
+          );
+          sim.steerAngle = (sim.wheelVisualDeg / MAX_WHEEL_DEG) * MAX_REAR_STEER_RAD;
+        }
+
+        // Hydraulics: Fork height & Mast tilt
+        if (sim.liftInput !== 0) {
+          sim.forkHeight = THREE.MathUtils.clamp(sim.forkHeight + sim.liftInput * 0.55 * dt, 0.04, 2.20);
+        }
+        if (sim.tiltInput !== 0) {
+          sim.mastTiltDeg = THREE.MathUtils.clamp(sim.mastTiltDeg + sim.tiltInput * 9.0 * dt, -10.0, 8.0);
+        }
+
+        // Apply hydraulics to 3D rig
+        if (forkCarriageGroup) {
+          forkCarriageGroup.position.y = sim.forkHeight;
+        }
+        if (mastTiltGroup) {
+          // +tilt = forward tilt (-X rotation in Three.js when facing -Z)
+          mastTiltGroup.rotation.x = THREE.MathUtils.degToRad(-sim.mastTiltDeg);
+        }
+
+        // Hand signal animation timer
+        if (sim.handSignalTimer > 0) {
+          sim.handSignalTimer -= dt;
+          if (handMeshGroup) {
+            handMeshGroup.rotation.z = Math.sin(performance.now() * 0.008) * 0.06 - 0.12;
+          }
+          if (sim.handSignalTimer <= 0) {
+            if (handMeshGroup) handMeshGroup.visible = false;
+            var badge = document.getElementById('hand-signal-badge');
+            if (badge) badge.classList.remove('is-visible');
+          }
+        }
+
+        // Drivetrain & Brakes
+        var maxFwdSpeed = sim.pedals.inch ? 0.85 : 3.2;  // ~3.0 km/h inching vs ~11.5 km/h normal
+        var maxRevSpeed = sim.pedals.inch ? 0.75 : 2.6;
+
+        if (sim.parkingBrake) {
+          if (sim.pedals.throttle && sim.gear !== 'N') {
+            showToast('手煞車未放開！請先按 (P) 解除手煞車', 'error');
+          }
+          sim.speed *= Math.max(0, 1 - 12 * dt);
+          if (Math.abs(sim.speed) < 0.02) sim.speed = 0;
+        } else if (sim.pedals.brake) {
+          var decel = 7.5 * dt;
+          if (Math.abs(sim.speed) <= decel) sim.speed = 0;
+          else sim.speed -= Math.sign(sim.speed) * decel;
+        } else if (sim.gear === 'F') {
+          var targetF = sim.pedals.throttle ? maxFwdSpeed : (sim.pedals.inch ? 0.28 : 0.45); // torque converter creep
+          if (sim.pedals.inch && !sim.pedals.throttle) targetF = 0.18;
+          sim.speed += (targetF - sim.speed) * Math.min(1, 2.8 * dt);
+        } else if (sim.gear === 'R') {
+          var targetR = -(sim.pedals.throttle ? maxRevSpeed : (sim.pedals.inch ? 0.25 : 0.42));
+          if (sim.pedals.inch && !sim.pedals.throttle) targetR = -0.16;
+          sim.speed += (targetR - sim.speed) * Math.min(1, 2.8 * dt);
+        } else {
+          // Neutral coasting friction
+          sim.speed *= Math.max(0, 1 - 2.2 * dt);
+          if (Math.abs(sim.speed) < 0.015) sim.speed = 0;
+        }
+
+        // Reverse warning beep
+        if (sim.gear === 'R' && !sim.parkingBrake) {
+          beepTimer -= dt;
+          if (beepTimer <= 0) {
+            beepTimer = 0.72;
+            playTone(1180, 0.14, 'square', 0.025);
+          }
+        } else {
+          beepTimer = 0;
+        }
+
+        // Counterbalance Forklift Rear-Wheel Steering Kinematics:
+        // Turning wheel clockwise (+steerAngle) swings rear tail LEFT, turning nose RIGHT (-yaw) when going forward!
+        if (Math.abs(sim.speed) > 0.002) {
+          var angularVel = -(sim.speed / WHEELBASE) * Math.tan(sim.steerAngle);
+          sim.yaw += angularVel * dt;
+          // Forward vector when yaw = 0 is (-sin(yaw), -cos(yaw))
+          sim.x += -Math.sin(sim.yaw) * sim.speed * dt;
+          sim.z += -Math.cos(sim.yaw) * sim.speed * dt;
+        }
+
+        // Keep within large yard bounds
+        sim.x = THREE.MathUtils.clamp(sim.x, -42, 42);
+        sim.z = THREE.MathUtils.clamp(sim.z, -35, 35);
+
+        if (forkliftRig) {
+          forkliftRig.position.set(sim.x, 0, sim.z);
+          forkliftRig.rotation.y = sim.yaw;
+        }
+
+        // Course Evaluation & Collision Detection
+        evaluateCourse(dt);
+      }
+
+      function evaluateCourse(dt) {
+        var sample = nearestCourseSample(sim.x, sim.z);
+        sim.progressPct = (sample.point.s / totalCourseLength) * 100;
+
+        // Timer starts as soon as forklift moves forward out of start prep
+        if (sim.timerRunning && sim.stage < 4) {
+          sim.timerSec += dt;
+        }
+
+        // Stage transitions
+        if (appState.mode === 'exam') {
+          if (sim.stage === 0) {
+            if (Math.abs(sim.speed) > 0.12 && sim.progressPct > 5) {
+              // Check start readiness
+              if (!sim.seatbelt) {
+                showToast('注意：未繫安全帶 (B) 即起步！', 'error');
+              } else if (!sim.handSignaled) {
+                showToast('提醒：起步前應舉手示意 (G)', '');
+              }
+              sim.stage = 1;
+              sim.timerRunning = true;
+            }
+          } else if (sim.stage === 1) {
+            if (sim.progressPct >= 90 && Math.abs(sim.speed) < 0.18) {
+              sim.endpointDwell += dt;
+              if (sim.endpointDwell >= 0.45) {
+                sim.stage = 2;
+                playTone(880, 0.18, 'sine', 0.06);
+                showToast('已進入終點區！請舉手 (G) 並排 R 檔開始 S 型倒車', 'good');
+              }
+            } else {
+              sim.endpointDwell = 0;
+            }
+          } else if (sim.stage === 2) {
+            if (sim.gear === 'R' && sim.progressPct < 88) {
+              sim.stage = 3;
+            }
+          } else if (sim.stage === 3) {
+            if (sim.progressPct <= 11 && Math.abs(sim.speed) < 0.2) {
+              sim.startReturnDwell += dt;
+              if (sim.startReturnDwell >= 0.45) {
+                sim.stage = 4;
+                sim.timerRunning = false;
+                playTone(987, 0.25, 'triangle', 0.07);
+                appState.completedRuns += 1;
+                if (appState.bestTimeSec === null || sim.timerSec < appState.bestTimeSec) {
+                  appState.bestTimeSec = sim.timerSec;
+                }
+                savePersistentState();
+                showExamCompleteModal();
+              }
+            } else {
+              sim.startReturnDwell = 0;
+            }
+          }
+        }
+
+        // Line touch check (check chassis + fork outer points against lane half-width)
+        var fx = -Math.sin(sim.yaw);
+        var fz = -Math.cos(sim.yaw);
+        var rx = Math.cos(sim.yaw);
+        var rz = -Math.sin(sim.yaw);
+        var checkPts = [
+          { x: sim.x + rx * 0.56 - fx * 0.6, z: sim.z + rz * 0.56 - fz * 0.6 },
+          { x: sim.x - rx * 0.56 - fx * 0.6, z: sim.z - rz * 0.56 - fz * 0.6 },
+          { x: sim.x + rx * 0.52 + fx * 1.1, z: sim.z + rz * 0.52 + fz * 1.1 },
+          { x: sim.x - rx * 0.52 + fx * 1.1, z: sim.z - rz * 0.52 + fz * 1.1 }
+        ];
+
+        var outNow = false;
+        for (var p = 0; p < checkPts.length; p++) {
+          var s = nearestCourseSample(checkPts[p].x, checkPts[p].z);
+          if (s.dist > LANE_HALF_WIDTH + 0.04) {
+            outNow = true;
+            break;
+          }
+        }
+        if (outNow && !sim.wasOutOfLine && appState.mode === 'exam' && sim.stage >= 1 && sim.stage < 4) {
+          sim.lineTouches += 1;
+          playTone(210, 0.16, 'sawtooth', 0.05);
+          showToast('壓到黃線！請微調方向盤', 'error');
+        }
+        sim.wasOutOfLine = outNow;
+
+        // Cone collision check
+        for (var c = 0; c < cones.length; c++) {
+          var cone = cones[c];
+          if (!cone.hit) {
+            var dCenter = Math.hypot(sim.x - cone.x, sim.z - cone.z);
+            var dForks = Math.hypot((sim.x + fx * 1.2) - cone.x, (sim.z + fz * 1.2) - cone.z);
+            if (dCenter < 0.78 || dForks < 0.65) {
+              cone.hit = true;
+              cone.wobble = 1.0;
+              if (appState.mode === 'exam' && sim.stage < 4) {
+                sim.coneHits += 1;
+              }
+              playTone(165, 0.22, 'sawtooth', 0.06);
+              showToast('碰撞橘色角錐！', 'error');
+            }
+          }
+          if (cone.wobble > 0) {
+            cone.mesh.rotation.z = 1.18 * (1 - cone.wobble * 0.4);
+            cone.wobble = Math.max(0, cone.wobble - dt * 2.5);
+          }
+        }
+      }
+
+      function animate(now) {
+        var dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+        lastTime = now;
+
+        stepSimulation(dt);
+        updateHUD();
+        drawMinimap();
+
+        if (renderer && scene && camera) {
+          renderer.render(scene, camera);
+        }
+        animFrameId = requestAnimationFrame(animate);
+      }
+
+      function onWindowResize() {
+        if (!renderer || !camera) return;
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      }
+
+      /* =====================================================================
+         9. PERSISTENCE HELPERS (notebookAppApi)
+         ===================================================================== */
+      async function loadPersistentState() {
+        if (window.notebookAppApi && typeof window.notebookAppApi.getAppState === 'function') {
+          try {
+            var saved = await window.notebookAppApi.getAppState();
+            if (saved && typeof saved === 'object') {
+              if (saved.mode === 'exam' || saved.mode === 'free') appState.mode = saved.mode;
+              if (typeof saved.soundEnabled === 'boolean') appState.soundEnabled = saved.soundEnabled;
+              if (typeof saved.bestTimeSec === 'number') appState.bestTimeSec = saved.bestTimeSec;
+              if (typeof saved.completedRuns === 'number') appState.completedRuns = saved.completedRuns;
+            }
+          } catch (e) {}
+        }
+        var btnMode = document.getElementById('btn-mode');
+        var lblMode = document.getElementById('mode-label');
+        var btnSound = document.getElementById('btn-sound');
+        if (btnMode) btnMode.textContent = appState.mode === 'exam' ? '考照' : '自由';
+        if (lblMode) lblMode.textContent = appState.mode === 'exam' ? '考照實作模式' : '自由練習模式';
+        if (btnSound) {
+          btnSound.classList.toggle('is-active', appState.soundEnabled);
+          btnSound.textContent = appState.soundEnabled ? '音效' : '靜音';
+        }
+      }
+
+      async function savePersistentState() {
+        if (window.notebookAppApi && typeof window.notebookAppApi.setAppState === 'function') {
+          try {
+            await window.notebookAppApi.setAppState({
+              mode: appState.mode,
+              soundEnabled: appState.soundEnabled,
+              bestTimeSec: appState.bestTimeSec,
+              completedRuns: appState.completedRuns
+            });
+          } catch (e) {}
+        }
+      }
+
+      /* =====================================================================
+         10. INITIALIZATION & GLOBAL EXPORTS FOR INLINE HANDLERS
+         ===================================================================== */
+      window.recenterWheel = recenterWheel;
+      window.setGear = setGear;
+      window.toggleSeatbelt = toggleSeatbelt;
+      window.toggleParkingBrake = toggleParkingBrake;
+      window.triggerHandSignal = triggerHandSignal;
+      window.toggleMode = toggleMode;
+      window.toggleSound = toggleSound;
+      window.resetSimulation = resetSimulation;
+      window.openHelpModal = openHelpModal;
+      window.closeModal = closeModal;
+
+      async function bootstrap() {
+        // Prevent unwanted browser pinch-zoom or context menu on mobile
+        document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+        document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+        await loadPersistentState();
+        initScene();
+        bindInputEvents();
+        window.addEventListener('resize', onWindowResize);
+        window.addEventListener('orientationchange', function () {
+          setTimeout(onWindowResize, 120);
+        });
+
+        updateHUD();
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        lastTime = performance.now();
+        animFrameId = requestAnimationFrame(animate);
+
+        if (window.notebookAppApi && typeof window.notebookAppApi.notifyAppReady === 'function') {
+          window.notebookAppApi.notifyAppReady();
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+      } else {
+        bootstrap();
+      }
+    })();
+  </script>
+</body>
+</html>
