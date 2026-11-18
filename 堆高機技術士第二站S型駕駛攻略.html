@@ -1,0 +1,2936 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="artifact-type" content="tool">
+  <meta name="design-style" content="carbon">
+  <title>堆高機技術士第二站 — S 型前進與倒車 3D 模擬器</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+
+      /* Carbon core tokens */
+      --background: #ffffff;
+      --surface-container-low: #f4f4f4;
+      --surface-container: #f4f4f4;
+      --surface-container-high: #e0e0e0;
+
+      --on-surface: #161616;
+      --on-surface-variant: #525252;
+
+      --outline: #8d8d8d;
+      --outline-variant: #e0e0e0;
+
+      --primary: #0f62fe;
+      --on-primary: #ffffff;
+      --primary-container: #d0e2ff;
+      --on-primary-container: #161616;
+      --secondary: #6f6f6f;
+      --tertiary: #198038;
+      --error: #da1e28;
+      --on-error: #ffffff;
+
+      --data-1: #0f62fe;
+      --data-2: #6929c4;
+      --data-3: #005d5d;
+      --data-4: #9f1853;
+      --data-context: #8d8d8d;
+
+      --font-headline: 'Noto Sans TC', 'IBM Plex Sans', sans-serif;
+      --font-body: 'Noto Sans TC', 'IBM Plex Sans', sans-serif;
+      --font-label: 'IBM Plex Mono', 'Noto Sans TC', monospace;
+
+      --rounded: 0.125rem;
+      --rounded-lg: 0.25rem;
+      --rounded-full: 9999px;
+
+      --shadow-1: 0 2px 6px rgb(0 0 0 / 0.12);
+      --shadow-2: 0 4px 16px rgb(0 0 0 / 0.16);
+      --rule: 1px solid var(--outline-variant);
+      --field-rule: 1px solid var(--outline);
+      --indicator: 2px solid var(--primary);
+
+      /* Shared semantic & HUD tokens */
+      --positive: #198038;
+      --positive-bg: #defbe6;
+      --warning: #b28600;
+      --warning-bg: #fcf4d6;
+      --error-bg: #fff1f1;
+      --focus: #0f62fe;
+
+      /* Translucent HUD surfaces (no inline colors in rules) */
+      --hud-glass: rgb(255 255 255 / 0.84);
+      --hud-glass-strong: rgb(255 255 255 / 0.94);
+      --hud-glass-dark: rgb(22 22 22 / 0.84);
+      --hud-border: rgb(22 22 22 / 0.14);
+      --hud-track: rgb(22 22 22 / 0.08);
+      --wheel-rim: #262626;
+      --wheel-spoke: #393939;
+      --wheel-knob: #f59e0b;
+      --lever-shaft: #525252;
+      --lever-grip: #161616;
+      --lever-grip-lift: #0f62fe;
+      --lever-grip-tilt: #005d5d;
+      --pedal-brake: #da1e28;
+      --pedal-gas: #198038;
+      --reverse-accent: #f59e0b;
+      --toast-bg: rgb(22 22 22 / 0.9);
+      --toast-text: #ffffff;
+      --alert-flash: rgb(218 30 40 / 0.35);
+
+      /* Type scale */
+      --display-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+      --headline-size: clamp(1.125rem, 1rem + 0.4vw, 1.375rem);
+      --subhead-size: clamp(0.9375rem, 0.88rem + 0.25vw, 1.0625rem);
+      --body-size: clamp(0.875rem, 0.84rem + 0.15vw, 0.9375rem);
+      --label-size: 0.75rem;
+
+      /* Spacing scale */
+      --space-xs: 0.25rem;
+      --space-sm: 0.5rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2.5rem;
+      --space-2xl: 4rem;
+
+      /* Motion */
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --dur-micro: 120ms;
+      --dur-short: 220ms;
+      --dur-long: 420ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overflow-x: clip;
+      background: var(--surface-container-low);
+      color: var(--on-surface);
+      font-family: var(--font-body);
+      font-size: var(--body-size);
+      line-height: 1.45;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    header { position: static !important; }
+    button, input, select, textarea { font-family: inherit; }
+
+    /* Focus rings */
+    :focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    /* Main Simulator Stage */
+    .sim-shell {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    #sim-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* Violation border flash */
+    .collision-vignette {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 0 0 transparent;
+      transition: box-shadow var(--dur-micro) var(--ease-out);
+      z-index: 5;
+    }
+    .collision-vignette.is-hit {
+      box-shadow: inset 0 0 0 8px var(--alert-flash);
+    }
+
+    /* Top HUD Bar */
+    .hud-top {
+      position: absolute;
+      top: var(--space-sm);
+      left: var(--space-sm);
+      right: var(--space-sm);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      pointer-events: none;
+      z-index: 20;
+    }
+    .hud-top > * { pointer-events: auto; }
+
+    /* Translucent Capsule SOP Button & Drawer */
+    .sop-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-xs);
+      max-width: min(320px, calc(100vw - 1rem));
+    }
+
+    .sop-capsule {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-sm);
+      min-height: 44px;
+      padding: var(--space-xs) var(--space-md);
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+      color: var(--on-surface);
+      font-size: var(--label-size);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+    .sop-capsule:hover { background: var(--hud-glass-strong); }
+    .sop-capsule:active { transform: scale(0.98); }
+
+    .sop-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .sop-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: var(--rounded-full);
+      background: var(--outline);
+      transition: background-color var(--dur-micro) var(--ease-out);
+    }
+    .sop-dot.done { background: var(--positive); }
+    .sop-dot.warn { background: var(--warning); }
+
+    .sop-badge-count {
+      font-family: var(--font-label);
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: var(--rounded-full);
+      background: var(--surface-container-high);
+      color: var(--on-surface);
+    }
+    .sop-badge-count.all-done {
+      background: var(--positive-bg);
+      color: var(--positive);
+    }
+
+    .sop-panel {
+      width: min(310px, calc(100vw - 1rem));
+      background: var(--hud-glass-strong);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--hud-border);
+      border-radius: var(--rounded-lg);
+      box-shadow: var(--shadow-2);
+      padding: var(--space-sm);
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sop-panel.is-open { display: flex; }
+
+    .sop-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 2px var(--space-xs) var(--space-xs);
+      border-bottom: var(--rule);
+      font-size: var(--label-size);
+      color: var(--on-surface-variant);
+      font-weight: 600;
+    }
+
+    .sop-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      width: 100%;
+      min-height: 40px;
+      padding: 6px var(--space-sm);
+      border: 0;
+      border-left: 3px solid var(--outline-variant);
+      background: var(--surface-container-low);
+      color: var(--on-surface);
+      font-size: 0.8125rem;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out);
+    }
+    .sop-item:hover { background: var(--surface-container-high); }
+    .sop-item.is-done {
+      background: var(--positive-bg);
+      border-left-color: var(--positive);
+    }
+    .sop-item.is-warn {
+      background: var(--warning-bg);
+      border-left-color: var(--warning);
+    }
+    .sop-item-left {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      font-weight: 500;
+    }
+    .sop-item-status {
+      font-family: var(--font-label);
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--on-surface-variant);
+      white-space: nowrap;
+    }
+    .sop-item.is-done .sop-item-status { color: var(--positive); }
+    .sop-item.is-warn .sop-item-status { color: var(--warning); }
+
+    /* Center Exam Status & Timer Pill */
+    .hud-center-group {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-sm);
+      min-height: 44px;
+      padding: var(--space-xs) var(--space-md);
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+    }
+
+    .stage-tag {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--primary);
+      white-space: nowrap;
+    }
+    .stage-tag.is-reverse { color: var(--warning); }
+    .stage-tag.is-complete { color: var(--positive); }
+
+    .mono-stat {
+      font-family: var(--font-label);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--on-surface);
+      white-space: nowrap;
+    }
+    .mono-stat.is-low { color: var(--error); }
+
+    .divider-v {
+      width: 1px;
+      height: 18px;
+      background: var(--outline-variant);
+    }
+
+    /* Right HUD Action Buttons */
+    .hud-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 44px;
+      padding: 0 var(--space-md);
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+      color: var(--on-surface);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+    .pill-btn:hover { background: var(--hud-glass-strong); }
+    .pill-btn:active { transform: scale(0.97); }
+    .pill-btn.is-primary {
+      background: var(--primary);
+      color: var(--on-primary);
+      border-color: var(--primary);
+    }
+    .pill-btn.is-primary:hover {
+      background: color-mix(in srgb, var(--primary), var(--on-surface) 18%);
+    }
+    .pill-btn.is-active {
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+      border-color: var(--primary);
+    }
+    .pill-btn.is-icon-only {
+      padding: 0;
+      width: 44px;
+    }
+
+    /* Reverse / Rearview Indicator Banner */
+    .cam-banner {
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px var(--space-md);
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass-dark);
+      color: var(--toast-text);
+      font-size: var(--label-size);
+      font-family: var(--font-label);
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      pointer-events: none;
+      z-index: 15;
+      opacity: 0;
+      transition: opacity var(--dur-short) var(--ease-out);
+      white-space: nowrap;
+    }
+    .cam-banner.is-visible { opacity: 1; }
+    .cam-rec-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: var(--rounded-full);
+      background: var(--reverse-accent);
+    }
+
+    /* Live Toast / Feedback Strip */
+    .hud-toast {
+      position: absolute;
+      top: 96px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-6px);
+      max-width: min(460px, calc(100vw - 2rem));
+      padding: var(--space-xs) var(--space-md);
+      border-radius: var(--rounded-lg);
+      background: var(--toast-bg);
+      color: var(--toast-text);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 25;
+      box-shadow: var(--shadow-2);
+      transition: opacity var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+    }
+    .hud-toast.is-show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .hud-toast.is-error {
+      background: var(--error);
+      color: var(--on-error);
+    }
+    .hud-toast.is-success {
+      background: var(--positive);
+      color: var(--on-primary);
+    }
+
+    /* Bottom Cockpit Controls */
+    .cockpit-dock {
+      position: absolute;
+      bottom: var(--space-md);
+      left: var(--space-md);
+      right: var(--space-md);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: var(--space-md);
+      pointer-events: none;
+      z-index: 20;
+    }
+    .cockpit-dock > * { pointer-events: auto; }
+
+    /* Left Cluster: Steering Wheel + F/N/R Vertical Shifter */
+    .left-cluster {
+      display: flex;
+      align-items: flex-end;
+      gap: var(--space-sm);
+    }
+
+    .wheel-module {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .wheel-readout {
+      font-family: var(--font-label);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass);
+      border: 1px solid var(--hud-border);
+      color: var(--on-surface);
+      font-variant-numeric: tabular-nums;
+    }
+    .wheel-readout.is-centered {
+      color: var(--positive);
+      background: var(--positive-bg);
+    }
+
+    .wheel-stage {
+      position: relative;
+      width: 152px;
+      height: 152px;
+      touch-action: none;
+      cursor: grab;
+    }
+    .wheel-stage:active { cursor: grabbing; }
+
+    .wheel-rotor {
+      width: 100%;
+      height: 100%;
+      border-radius: var(--rounded-full);
+      position: relative;
+      background: radial-gradient(circle, transparent 52%, var(--wheel-rim) 53%, var(--wheel-rim) 68%, transparent 69%);
+      filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.25));
+      will-change: transform;
+    }
+
+    .wheel-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      pointer-events: none;
+    }
+
+    /* Center Embedded Straighten Button (X) */
+    .wheel-center-btn {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 58px;
+      height: 58px;
+      border-radius: var(--rounded-full);
+      border: 2px solid var(--background);
+      background: var(--hud-glass-strong);
+      color: var(--on-surface);
+      box-shadow: var(--shadow-1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.1;
+      cursor: pointer;
+      z-index: 3;
+      transition: background-color var(--dur-micro) var(--ease-out), transform var(--dur-micro) var(--ease-out);
+    }
+    .wheel-center-btn:hover { background: var(--primary-container); }
+    .wheel-center-btn:active { transform: translate(-50%, -50%) scale(0.94); }
+    .wheel-center-label { font-size: 0.75rem; font-weight: 700; }
+    .wheel-center-key {
+      font-family: var(--font-label);
+      font-size: 0.65rem;
+      color: var(--on-surface-variant);
+      font-weight: 600;
+    }
+
+    /* Vertical F/N/R Shifter */
+    .shifter-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px;
+      border-radius: var(--rounded-lg);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+    }
+    .shifter-title {
+      font-family: var(--font-label);
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-align: center;
+      color: var(--on-surface-variant);
+      padding-bottom: 2px;
+      border-bottom: var(--rule);
+    }
+    .gear-btn {
+      width: 48px;
+      height: 40px;
+      border: 1px solid var(--outline-variant);
+      border-radius: var(--rounded);
+      background: var(--surface-container-low);
+      color: var(--on-surface);
+      font-family: var(--font-label);
+      font-size: 0.875rem;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      cursor: pointer;
+      transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
+    }
+    .gear-btn span.gear-sub {
+      font-family: var(--font-body);
+      font-size: 0.625rem;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+    .gear-btn.is-active-f {
+      background: var(--primary);
+      color: var(--on-primary);
+      border-color: var(--primary);
+    }
+    .gear-btn.is-active-n {
+      background: var(--on-surface);
+      color: var(--background);
+      border-color: var(--on-surface);
+    }
+    .gear-btn.is-active-r {
+      background: var(--warning);
+      color: var(--on-primary);
+      border-color: var(--warning);
+    }
+
+    /* Center Mini Telemetry Strip (Forklift Speed & Brake Indicator) */
+    .center-mini-hud {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: 6px var(--space-md);
+      border-radius: var(--rounded-full);
+      background: var(--hud-glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--hud-border);
+      font-family: var(--font-label);
+      font-size: 0.75rem;
+      color: var(--on-surface);
+      box-shadow: var(--shadow-1);
+    }
+    .brake-pill {
+      padding: 2px 8px;
+      border-radius: var(--rounded-full);
+      background: var(--error-bg);
+      color: var(--error);
+      font-weight: 600;
+    }
+    .brake-pill.is-off {
+      background: var(--positive-bg);
+      color: var(--positive);
+    }
+
+    /* Right Cluster: Hydraulic Levers + Pedals */
+    .right-cluster {
+      display: flex;
+      align-items: flex-end;
+      gap: var(--space-sm);
+    }
+
+    .hydraulics-panel {
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border-radius: var(--rounded-lg);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+    }
+
+    .lever-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      width: 68px;
+    }
+
+    .lever-readout {
+      width: 100%;
+      text-align: center;
+      font-family: var(--font-label);
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 4px;
+      border-radius: var(--rounded);
+      background: var(--surface-container-low);
+      color: var(--on-surface);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .lever-readout.in-target {
+      background: var(--positive-bg);
+      color: var(--positive);
+    }
+    .lever-readout.is-over {
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    .lever-track {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      border-radius: var(--rounded);
+      overflow: hidden;
+      border: 1px solid var(--outline-variant);
+      background: var(--surface-container-low);
+      position: relative;
+    }
+
+    .lever-btn {
+      width: 100%;
+      min-height: 50px;
+      border: 0;
+      background: transparent;
+      color: var(--on-surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      cursor: pointer;
+      touch-action: none;
+      padding: 4px 2px;
+      transition: background-color var(--dur-micro) var(--ease-out);
+    }
+    .lever-btn:hover { background: var(--surface-container-high); }
+    .lever-btn.is-pressed {
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+    }
+    .lever-btn-arrow { font-size: 0.75rem; line-height: 1; font-weight: 700; }
+    .lever-btn-text { font-size: 0.72rem; font-weight: 700; line-height: 1.1; }
+    .lever-btn-sub {
+      font-family: var(--font-label);
+      font-size: 0.6rem;
+      color: var(--on-surface-variant);
+    }
+
+    .lever-divider {
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface-container-high);
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--on-surface-variant);
+      border-top: 1px solid var(--outline-variant);
+      border-bottom: 1px solid var(--outline-variant);
+    }
+
+    /* Pedals: Brake & Accelerator */
+    .pedals-col {
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border-radius: var(--rounded-lg);
+      background: var(--hud-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--hud-border);
+      box-shadow: var(--shadow-1);
+    }
+
+    .pedal-btn {
+      width: 54px;
+      height: 112px;
+      border-radius: var(--rounded);
+      border: 1px solid var(--outline);
+      background: var(--surface-container-low);
+      color: var(--on-surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 4px;
+      cursor: pointer;
+      touch-action: none;
+      transition: transform var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+    }
+    .pedal-btn.is-brake { border-top: 4px solid var(--pedal-brake); }
+    .pedal-btn.is-gas { border-top: 4px solid var(--pedal-gas); }
+    .pedal-btn.is-pressed {
+      transform: translateY(3px) scale(0.97);
+      background: var(--surface-container-high);
+    }
+    .pedal-btn.is-brake.is-pressed {
+      background: var(--error-bg);
+      color: var(--error);
+    }
+    .pedal-btn.is-gas.is-pressed {
+      background: var(--positive-bg);
+      color: var(--positive);
+    }
+    .pedal-treads {
+      width: 28px;
+      height: 36px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      opacity: 0.45;
+    }
+    .pedal-tread {
+      height: 4px;
+      background: currentColor;
+      border-radius: 2px;
+    }
+    .pedal-label { font-size: 0.78rem; font-weight: 700; }
+    .pedal-key {
+      font-family: var(--font-label);
+      font-size: 0.65rem;
+      color: var(--on-surface-variant);
+    }
+
+    /* Exam Result / Info Overlay Modal (inline drawer, non-blocking until triggered) */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgb(22 22 22 / 0.55);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-md);
+      z-index: 40;
+    }
+    .modal-backdrop.is-open { display: flex; }
+
+    .modal-card {
+      width: min(500px, 100%);
+      max-height: 90dvh;
+      overflow-y: auto;
+      background: var(--background);
+      color: var(--on-surface);
+      border-radius: var(--rounded-lg);
+      box-shadow: var(--shadow-2);
+      border-top: 4px solid var(--primary);
+      padding: var(--space-lg);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+    .modal-card.is-pass { border-top-color: var(--positive); }
+    .modal-card.is-fail { border-top-color: var(--error); }
+
+    .modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-sm);
+    }
+    .modal-title {
+      margin: 0;
+      font-family: var(--font-headline);
+      font-size: var(--headline-size);
+      font-weight: 600;
+    }
+    .modal-sub {
+      margin: 4px 0 0;
+      font-size: var(--body-size);
+      color: var(--on-surface-variant);
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-sm);
+    }
+    .metric-tile {
+      background: var(--surface-container-low);
+      padding: var(--space-sm);
+      border-bottom: var(--indicator);
+    }
+    .metric-label {
+      font-family: var(--font-label);
+      font-size: 0.7rem;
+      color: var(--on-surface-variant);
+      text-transform: uppercase;
+    }
+    .metric-val {
+      font-family: var(--font-label);
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .log-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      max-height: 150px;
+      overflow-y: auto;
+      border-top: var(--rule);
+      border-bottom: var(--rule);
+    }
+    .log-list li {
+      padding: 6px 4px;
+      font-size: 0.8125rem;
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      border-bottom: var(--rule);
+    }
+    .log-list li:last-child { border-bottom: 0; }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .rect-btn {
+      min-height: 44px;
+      padding: 0 var(--space-lg);
+      border: 1px solid var(--primary);
+      border-radius: var(--rounded);
+      background: transparent;
+      color: var(--primary);
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .rect-btn.is-solid {
+      background: var(--primary);
+      color: var(--on-primary);
+    }
+
+    /* Guide Shortcut Grid inside Info Modal */
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-xs);
+      font-size: 0.8125rem;
+    }
+    .guide-row {
+      background: var(--surface-container-low);
+      padding: 6px 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .kbd {
+      font-family: var(--font-label);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 1px 6px;
+      background: var(--surface-container-high);
+      border-radius: var(--rounded);
+    }
+
+    /* Mobile Portrait & Narrow Viewports */
+    @media (max-width: 640px) {
+      .hud-top {
+        top: var(--space-xs);
+        left: var(--space-xs);
+        right: var(--space-xs);
+        gap: 4px;
+      }
+      .sop-capsule {
+        min-height: 38px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+      }
+      .status-pill {
+        min-height: 38px;
+        padding: 4px 10px;
+        gap: 6px;
+      }
+      .stage-tag { font-size: 0.72rem; }
+      .mono-stat { font-size: 0.75rem; }
+      .pill-btn {
+        min-height: 38px;
+        padding: 0 10px;
+        font-size: 0.72rem;
+      }
+      .pill-btn.is-icon-only { width: 38px; }
+      .btn-label-hide-sm { display: none; }
+
+      .cam-banner { top: 48px; font-size: 0.7rem; }
+      .hud-toast { top: 80px; font-size: 0.75rem; }
+
+      .cockpit-dock {
+        bottom: var(--space-xs);
+        left: var(--space-xs);
+        right: var(--space-xs);
+        gap: 4px;
+      }
+      .center-mini-hud { display: none; }
+
+      .wheel-stage { width: 112px; height: 112px; }
+      .wheel-center-btn { width: 46px; height: 46px; }
+      .wheel-center-label { font-size: 0.65rem; }
+      .wheel-center-key { font-size: 0.58rem; }
+
+      .shifter-box { padding: 4px; gap: 3px; }
+      .gear-btn { width: 40px; height: 34px; font-size: 0.78rem; }
+      .gear-btn span.gear-sub { font-size: 0.56rem; }
+
+      .hydraulics-panel { padding: 4px; gap: 4px; }
+      .lever-col { width: 54px; }
+      .lever-btn { min-height: 42px; }
+      .lever-btn-text { font-size: 0.65rem; }
+      .lever-btn-sub { display: none; }
+      .lever-readout { font-size: 0.62rem; }
+
+      .pedals-col { padding: 4px; gap: 4px; }
+      .pedal-btn { width: 42px; height: 96px; padding: 6px 2px; }
+      .pedal-treads { width: 22px; height: 24px; }
+      .pedal-label { font-size: 0.68rem; }
+      .guide-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Mobile Landscape Compact Height */
+    @media (max-height: 480px) {
+      .hud-top { top: 4px; left: 6px; right: 6px; }
+      .sop-capsule, .status-pill, .pill-btn { min-height: 34px; }
+      .cockpit-dock { bottom: 6px; left: 8px; right: 8px; }
+      .center-mini-hud { display: none; }
+      .wheel-stage { width: 116px; height: 116px; }
+      .wheel-center-btn { width: 46px; height: 46px; }
+      .gear-btn { height: 32px; width: 42px; }
+      .lever-btn { min-height: 40px; }
+      .pedal-btn { height: 94px; width: 46px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sim-shell" id="sim-shell">
+    <canvas id="sim-canvas" aria-label="堆高機 S 型前進與倒車 3D 模擬畫面"></canvas>
+    <div class="collision-vignette" id="collision-vignette" aria-hidden="true"></div>
+
+    <!-- Top HUD -->
+    <div class="hud-top">
+      <!-- Top-Left: Translucent Capsule SOP Checklist (Collapsed by default) -->
+      <div class="sop-wrap">
+        <button type="button" class="sop-capsule" id="sop-toggle-btn" onclick="toggleSopDrawer()" aria-expanded="false" aria-controls="sop-panel">
+          <span class="sop-dots" id="sop-dots" aria-hidden="true">
+            <span class="sop-dot" id="dot-0"></span>
+            <span class="sop-dot" id="dot-1"></span>
+            <span class="sop-dot" id="dot-2"></span>
+            <span class="sop-dot" id="dot-3"></span>
+            <span class="sop-dot" id="dot-4"></span>
+          </span>
+          <span>SOP 檢核</span>
+          <span class="sop-badge-count" id="sop-count-badge">0/5</span>
+          <span id="sop-chevron" aria-hidden="true">▾</span>
+        </button>
+
+        <div class="sop-panel" id="sop-panel" role="region" aria-label="起步前五項安全檢核">
+          <div class="sop-panel-head">
+            <span>第二站起步前 SOP 檢核 (點擊或按快捷鍵)</span>
+            <span id="sop-summary-text">尚未完成</span>
+          </div>
+          <button type="button" class="sop-item" id="sop-row-0" onclick="toggleSeatbelt()">
+            <span class="sop-item-left">1. 繫安全帶 <span class="kbd">B</span></span>
+            <span class="sop-item-status" id="sop-status-0">未繫</span>
+          </button>
+          <button type="button" class="sop-item" id="sop-row-1" onclick="triggerHandSignal()">
+            <span class="sop-item-left">2. 舉手示意 <span class="kbd">G</span></span>
+            <span class="sop-item-status" id="sop-status-1">未示意</span>
+          </button>
+          <button type="button" class="sop-item" id="sop-row-2" onclick="toggleParkingBrake()">
+            <span class="sop-item-left">3. 鬆開手煞車 <span class="kbd">P</span></span>
+            <span class="sop-item-status" id="sop-status-2">已拉起</span>
+          </button>
+          <button type="button" class="sop-item" id="sop-row-3" onclick="focusLiftHint()">
+            <span class="sop-item-left">4. 貨叉升高 15~20 公分</span>
+            <span class="sop-item-status" id="sop-status-3">0.0 cm</span>
+          </button>
+          <button type="button" class="sop-item" id="sop-row-4" onclick="focusTiltHint()">
+            <span class="sop-item-left">5. 門架向後傾斜 3~5 度</span>
+            <span class="sop-item-status" id="sop-status-4">0.0°</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Top-Center: Exam Stage, 8:00 Timer & Score -->
+      <div class="hud-center-group">
+        <div class="status-pill">
+          <span class="stage-tag" id="stage-label">階段一：S型前進</span>
+          <span class="divider-v" aria-hidden="true"></span>
+          <span class="mono-stat" id="timer-display" title="考場 8 分鐘倒數">08:00</span>
+          <span class="divider-v" aria-hidden="true"></span>
+          <span class="mono-stat" id="score-display" title="目前考評分數">100 分</span>
+        </div>
+      </div>
+
+      <!-- Top-Right: Camera Switch, Sound, Guide, Reset -->
+      <div class="hud-actions">
+        <button type="button" class="pill-btn" id="cam-cycle-btn" onclick="cycleCamera()" title="切換視角 [V]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M23 7l-7 5 7 5V7z"></path>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+          </svg>
+          <span id="cam-label">視角: 駕駛座</span>
+        </button>
+        <button type="button" class="pill-btn is-icon-only" id="sound-toggle-btn" onclick="toggleAudio()" title="音效開關 [M]" aria-label="音效開關">
+          <svg id="sound-icon-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="sound-icon-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="display:none;">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <line x1="23" y1="9" x2="17" y2="15"></line>
+            <line x1="17" y1="9" x2="23" y2="15"></line>
+          </svg>
+        </button>
+        <button type="button" class="pill-btn" onclick="openGuideModal()" title="考場規則與操作說明">
+          <span>說明</span>
+        </button>
+        <button type="button" class="pill-btn" id="reset-btn" onclick="resetSimulation()" title="重新開始考場模擬">
+          <span>重設</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Reverse / Camera Mode Indicator -->
+    <div class="cam-banner" id="cam-banner">
+      <span class="cam-rec-dot" aria-hidden="true"></span>
+      <span id="cam-banner-text">CAM-R 車尾倒車鏡頭（含轉向預測軌跡線）</span>
+    </div>
+
+    <!-- Live Feedback Toast -->
+    <div class="hud-toast" id="hud-toast" role="status" aria-live="polite"></div>
+
+    <!-- Bottom Cockpit Controls -->
+    <div class="cockpit-dock">
+      <!-- Left: Steering Wheel (with embedded Center button) + Vertical F/N/R Shifter -->
+      <div class="left-cluster">
+        <div class="wheel-module">
+          <div class="wheel-readout is-centered" id="wheel-angle-readout">後輪 0°</div>
+          <div class="wheel-stage" id="wheel-stage" aria-label="方向盤控制區，可拖曳轉向或按 A/D 鍵">
+            <div class="wheel-rotor" id="wheel-rotor">
+              <svg class="wheel-svg" viewBox="0 0 160 160" aria-hidden="true">
+                <circle cx="80" cy="80" r="64" fill="none" stroke="#262626" stroke-width="18"></circle>
+                <circle cx="80" cy="80" r="64" fill="none" stroke="#525252" stroke-width="2" stroke-dasharray="6 14"></circle>
+                <!-- 3 Spokes -->
+                <line x1="80" y1="80" x2="22" y2="92" stroke="#393939" stroke-width="11" stroke-linecap="round"></line>
+                <line x1="80" y1="80" x2="138" y2="92" stroke="#393939" stroke-width="11" stroke-linecap="round"></line>
+                <line x1="80" y1="80" x2="80" y2="142" stroke="#393939" stroke-width="11" stroke-linecap="round"></line>
+                <!-- Top marker + Forklift Spinner Knob -->
+                <rect x="76" y="10" width="8" height="12" rx="2" fill="#0f62fe"></rect>
+                <circle cx="34" cy="34" r="10" fill="#f59e0b" stroke="#161616" stroke-width="2"></circle>
+              </svg>
+            </div>
+            <button type="button" class="wheel-center-btn" id="center-wheel-btn" onclick="centerSteeringWheel()" title="方向盤回正 [X]">
+              <span class="wheel-center-label">回正</span>
+              <span class="wheel-center-key">(X)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="shifter-box" role="group" aria-label="F/N/R 直式排檔座">
+          <div class="shifter-title">排檔</div>
+          <button type="button" class="gear-btn" id="gear-F" onclick="setGear('F')" title="前進檔 [1]">
+            <span>F</span><span class="gear-sub">前進</span>
+          </button>
+          <button type="button" class="gear-btn is-active-n" id="gear-N" onclick="setGear('N')" title="空檔 [2]">
+            <span>N</span><span class="gear-sub">空檔</span>
+          </button>
+          <button type="button" class="gear-btn" id="gear-R" onclick="setGear('R')" title="後退檔 [3]">
+            <span>R</span><span class="gear-sub">後退</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Center Mini Telemetry -->
+      <div class="center-mini-hud">
+        <span id="speed-readout">0.0 km/h</span>
+        <span class="divider-v" aria-hidden="true"></span>
+        <span class="brake-pill" id="pbrake-pill">手煞車 P</span>
+        <span class="divider-v" aria-hidden="true"></span>
+        <span id="best-record-readout">最佳: 尚無完賽</span>
+      </div>
+
+      <!-- Right: Hydraulic Control Levers (Lift & Tilt) + Brake / Throttle Pedals -->
+      <div class="right-cluster">
+        <div class="hydraulics-panel" role="group" aria-label="油壓控制桿">
+          <!-- Lift Lever: 上=下降(DOWN), 下=上升(UP) -->
+          <div class="lever-col">
+            <div class="lever-readout" id="fork-height-readout">0.0 cm</div>
+            <div class="lever-track">
+              <button type="button" class="lever-btn" id="btn-lift-down"
+                onpointerdown="startHold('liftDown', this)" onpointerup="stopHold('liftDown', this)"
+                onpointerleave="stopHold('liftDown', this)" onpointercancel="stopHold('liftDown', this)"
+                title="按「上」= 貨叉下降 (DOWN) [I]">
+                <span class="lever-btn-arrow">▲</span>
+                <span class="lever-btn-text">下降</span>
+                <span class="lever-btn-sub">上 [I]</span>
+              </button>
+              <div class="lever-divider">升降桿</div>
+              <button type="button" class="lever-btn" id="btn-lift-up"
+                onpointerdown="startHold('liftUp', this)" onpointerup="stopHold('liftUp', this)"
+                onpointerleave="stopHold('liftUp', this)" onpointercancel="stopHold('liftUp', this)"
+                title="按「下」= 貨叉上升 (UP) [K]">
+                <span class="lever-btn-sub">下 [K]</span>
+                <span class="lever-btn-text">上升</span>
+                <span class="lever-btn-arrow">▼</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tilt Lever: 上=前傾(Tilt Forward), 下=後仰(Tilt Backward 3~5°) -->
+          <div class="lever-col">
+            <div class="lever-readout" id="mast-tilt-readout">0.0°</div>
+            <div class="lever-track">
+              <button type="button" class="lever-btn" id="btn-tilt-fwd"
+                onpointerdown="startHold('tiltFwd', this)" onpointerup="stopHold('tiltFwd', this)"
+                onpointerleave="stopHold('tiltFwd', this)" onpointercancel="stopHold('tiltFwd', this)"
+                title="按「上」= 貨叉前傾 (Tilt Forward) [O]">
+                <span class="lever-btn-arrow">▲</span>
+                <span class="lever-btn-text">前傾</span>
+                <span class="lever-btn-sub">上 [O]</span>
+              </button>
+              <div class="lever-divider">傾斜桿</div>
+              <button type="button" class="lever-btn" id="btn-tilt-back"
+                onpointerdown="startHold('tiltBack', this)" onpointerup="stopHold('tiltBack', this)"
+                onpointerleave="stopHold('tiltBack', this)" onpointercancel="stopHold('tiltBack', this)"
+                title="按「下」= 貨叉後仰 3~5° (Tilt Backward) [L]">
+                <span class="lever-btn-sub">下 [L]</span>
+                <span class="lever-btn-text">後仰</span>
+                <span class="lever-btn-arrow">▼</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Brake & Accelerator Pedals -->
+        <div class="pedals-col" role="group" aria-label="煞車與油門踏板">
+          <button type="button" class="pedal-btn is-brake" id="btn-brake"
+            onpointerdown="startHold('brake', this)" onpointerup="stopHold('brake', this)"
+            onpointerleave="stopHold('brake', this)" onpointercancel="stopHold('brake', this)"
+            title="煞車踏板 [S / Space]">
+            <span class="pedal-label">煞車</span>
+            <div class="pedal-treads" aria-hidden="true">
+              <div class="pedal-tread"></div><div class="pedal-tread"></div><div class="pedal-tread"></div>
+            </div>
+            <span class="pedal-key">S/空白</span>
+          </button>
+          <button type="button" class="pedal-btn is-gas" id="btn-gas"
+            onpointerdown="startHold('gas', this)" onpointerup="stopHold('gas', this)"
+            onpointerleave="stopHold('gas', this)" onpointercancel="stopHold('gas', this)"
+            title="油門踏板 [W / ↑]">
+            <span class="pedal-label">油門</span>
+            <div class="pedal-treads" aria-hidden="true">
+              <div class="pedal-tread"></div><div class="pedal-tread"></div><div class="pedal-tread"></div>
+            </div>
+            <span class="pedal-key">W / ↑</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exam Guide / Result Modal -->
+    <div class="modal-backdrop" id="exam-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card" id="modal-card">
+        <div class="modal-head">
+          <div>
+            <h2 class="modal-title" id="modal-title">堆高機第二站：S型基本駕駛說明</h2>
+            <p class="modal-sub" id="modal-sub">依據堆高機操作技術士技能檢定規範，於 8 分鐘內完成 S 型前進與 S 型後退。</p>
+          </div>
+        </div>
+
+        <div class="metrics-row" id="modal-metrics">
+          <div class="metric-tile">
+            <div class="metric-label">考評分數</div>
+            <div class="metric-val" id="res-score">100</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-label">剩餘時間</div>
+            <div class="metric-val" id="res-time">08:00</div>
+          </div>
+          <div class="metric-tile">
+            <div class="metric-label">違規次數</div>
+            <div class="metric-val" id="res-violations">0</div>
+          </div>
+        </div>
+
+        <div id="modal-guide-body">
+          <div class="guide-grid">
+            <div class="guide-row"><span>1. 繫安全帶 / 2. 舉手示意</span><span class="kbd">B / G</span></div>
+            <div class="guide-row"><span>3. 鬆開手煞車</span><span class="kbd">P</span></div>
+            <div class="guide-row"><span>油門加速 / 踩煞車</span><span class="kbd">W / S 或 空白</span></div>
+            <div class="guide-row"><span>方向盤轉向 / 回正</span><span class="kbd">A D / X</span></div>
+            <div class="guide-row"><span>排檔切換 F / N / R</span><span class="kbd">1 / 2 / 3</span></div>
+            <div class="guide-row"><span>視角切換 (主/尾/側/俯)</span><span class="kbd">V</span></div>
+            <div class="guide-row"><span>升降桿 (上=降 / 下=升)</span><span class="kbd">I / K</span></div>
+            <div class="guide-row"><span>傾斜桿 (上=前傾 / 下=後仰)</span><span class="kbd">O / L</span></div>
+          </div>
+          <p class="modal-sub" style="margin-top: 10px;">
+            <strong>駕駛要領：</strong>堆高機為<strong>後輪轉向</strong>，前進轉彎時車尾甩幅極大，S 型切換彎向時適時點按「回正 (X)」再反向打輪；抵達「終點折返區」停穩後排入 <strong>R 檔</strong>，系統將即時切換車尾倒車視野並顯示轉向預測線，依原路倒車回起點停車格即可完賽。
+          </p>
+        </div>
+
+        <ul class="log-list" id="modal-log-list" style="display:none;"></ul>
+
+        <div class="modal-actions">
+          <button type="button" class="rect-btn" id="modal-close-btn" onclick="closeModal()">繼續練習</button>
+          <button type="button" class="rect-btn is-solid" onclick="resetSimulation(); closeModal();">重新開始計時</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <api-shim></api-shim>
+
+  <script>
+    // =========================================================================
+    // 1. STATE & CONFIGURATION
+    // =========================================================================
+    const EXAM_DURATION_SEC = 480; // 8:00
+    const MAX_STEER_DEG = 65;      // Rear wheel steering max angle
+    const WHEELBASE = 1.68;        // Distance between front drive axle and rear steer axle (m)
+    const LANE_HALF_WIDTH = 1.92;  // Widened S-curve half width (3.84m total width)
+    const CONE_RADIUS = 0.22;
+
+    const CAMERA_MODES = [
+      { id: 'cab', label: `駕駛座` },
+      { id: 'rear', label: `車尾倒車` },
+      { id: 'side', label: `右側貼線` },
+      { id: 'overhead', label: `俯視全局` }
+    ];
+
+    const state = {
+      // SOP 5 items
+      seatbelt: false,
+      handSignal: false,
+      parkingBrake: true, // Engaged at start
+      forkHeightCm: 0.0,  // Target: 15.0 ~ 20.0 cm
+      mastTiltDeg: 0.0,   // Positive = backward tilt (Target: 3.0 ~ 5.0 deg), Negative = forward tilt
+
+      // Driving mechanics
+      gear: 'N',          // 'F', 'N', 'R'
+      steerDeg: 0.0,      // -65 (left) to +65 (right)
+      speed: 0.0,         // m/s along forklift forward axis (+ = forward, - = reverse)
+      x: 0.0,
+      z: 2.2,             // Start inside Start Box (z = 0.6 to 4.2)
+      yaw: 0.0,           // radians, 0 = facing +Z
+
+      // Exam progression
+      stage: 1,           // 1 = S-Curve Forward, 2 = S-Curve Reverse, 3 = Completed
+      timerSec: EXAM_DURATION_SEC,
+      timerRunning: false,
+      score: 100,
+      violations: [],
+      sopPenalized: false,
+      wrongGearPenalized: false,
+      lastCollisionAt: -999,
+      elapsedTime: 0,
+
+      // UI & Camera
+      sopOpen: false,
+      camIndex: 0,        // 0=cab, 1=rear, 2=side, 3=overhead
+      autoSwitchedToRear: false,
+      soundEnabled: true,
+      bestTimeRemaining: null,
+      bestScore: null,
+      completedRuns: 0,
+      glanceAnim: 0       // Head-check glance timer for Hand Signal [G]
+    };
+
+    const heldInputs = {
+      gas: false,
+      brake: false,
+      steerLeft: false,
+      steerRight: false,
+      liftUp: false,
+      liftDown: false,
+      tiltFwd: false,
+      tiltBack: false
+    };
+
+    // =========================================================================
+    // 2. AUDIO SYNTHESIS (Web Audio API — procedural, zero external files)
+    // =========================================================================
+    let audioCtx = null;
+    let lastBeepTime = 0;
+
+    function ensureAudioCtx() {
+      if (!state.soundEnabled) return null;
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) audioCtx = new Ctx();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(function() {});
+      }
+      return audioCtx;
+    }
+
+    function playTone(freq, duration, type, volume) {
+      const ctx = ensureAudioCtx();
+      if (!ctx) return;
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type || 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(volume || 0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playReverseBeep(nowSec) {
+      if (!state.soundEnabled || state.gear !== 'R') return;
+      if (nowSec - lastBeepTime >= 0.72) {
+        lastBeepTime = nowSec;
+        playTone(1180, 0.22, 'square', 0.035);
+      }
+    }
+
+    // =========================================================================
+    // 3. S-CURVE COURSE GEOMETRY & CONES
+    // =========================================================================
+    const coursePoints = [];
+    const cones = [];
+    let endZoneCenter = { x: 0, z: 28, yaw: 0 };
+    let startZoneCenter = { x: 0, z: 2.3, yaw: 0 };
+
+    function buildSCurveCourse() {
+      coursePoints.length = 0;
+      cones.length = 0;
+
+      // Curvature segments (ds, kappa) -> smooth S-curve with inflection straights
+      // Total length ~35.8m, starts at (0, 0) heading +Z (yaw = 0)
+      const segments = [
+        { len: 4.6, kappa: 0.0 },              // Start Box straight
+        { len: 5.8, kappa: 1.0 / 6.4 },        // Right turn (+52 deg)
+        { len: 2.0, kappa: 0.0 },              // Straight inflection (center wheel)
+        { len: 11.6, kappa: -1.0 / 6.4 },      // Long Left S-bend (-104 deg)
+        { len: 2.0, kappa: 0.0 },              // Straight inflection
+        { len: 5.8, kappa: 1.0 / 6.4 },        // Right turn (+52 deg) back to yaw=0
+        { len: 4.8, kappa: 0.0 }               // End Turnaround straight
+      ];
+
+      let cx = 0.0;
+      let cz = 0.0;
+      let cyaw = 0.0; // 0 = +Z, +yaw = turns right (+X)
+      let totalS = 0.0;
+      const step = 0.25;
+
+      function pushPoint(x, z, yaw, s) {
+        // Right normal vector relative to forward (sin(yaw), cos(yaw))
+        const fx = Math.sin(yaw);
+        const fz = Math.cos(yaw);
+        const rx = Math.cos(yaw);
+        const rz = -Math.sin(yaw);
+        coursePoints.push({ x: x, z: z, yaw: yaw, fx: fx, fz: fz, rx: rx, rz: rz, s: s });
+      }
+
+      pushPoint(cx, cz, cyaw, totalS);
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const steps = Math.round(seg.len / step);
+        const ds = seg.len / steps;
+        for (let j = 0; j < steps; j++) {
+          cyaw += seg.kappa * ds;
+          cx += Math.sin(cyaw) * ds;
+          cz += Math.cos(cyaw) * ds;
+          totalS += ds;
+          pushPoint(cx, cz, cyaw, totalS);
+        }
+      }
+
+      // Compute Start & End Zone centers
+      const startPt = coursePoints[Math.floor(2.3 / step)];
+      if (startPt) startZoneCenter = { x: startPt.x, z: startPt.z, yaw: startPt.yaw, s: startPt.s };
+
+      const endIdx = Math.max(0, coursePoints.length - Math.floor(2.4 / step));
+      const endPt = coursePoints[endIdx];
+      if (endPt) endZoneCenter = { x: endPt.x, z: endPt.z, yaw: endPt.yaw, s: endPt.s };
+
+      // Place orange safety cones along both edges inside the S-curve & gate entries
+      for (let idx = 8; idx < coursePoints.length - 8; idx += 9) {
+        const pt = coursePoints[idx];
+        const offset = LANE_HALF_WIDTH + 0.16;
+        cones.push({
+          x: pt.x + pt.rx * offset,
+          z: pt.z + pt.rz * offset,
+          baseX: pt.x + pt.rx * offset,
+          baseZ: pt.z + pt.rz * offset,
+          hitTilt: 0,
+          hitDirX: 0,
+          hitDirZ: 0
+        });
+        cones.push({
+          x: pt.x - pt.rx * offset,
+          z: pt.z - pt.rz * offset,
+          baseX: pt.x - pt.rx * offset,
+          baseZ: pt.z - pt.rz * offset,
+          hitTilt: 0,
+          hitDirX: 0,
+          hitDirZ: 0
+        });
+      }
+    }
+
+    // =========================================================================
+    // 4. THREE.JS 3D SCENE & WIDE-VIEW FORKLIFT CONSTRUCTION
+    // =========================================================================
+    let renderer, scene, camera, canvasEl;
+    let forkliftGroup, frontWheelL, frontWheelR, rearHubL, rearHubR, rearWheelL, rearWheelR;
+    let mastTiltGroup, forkCarriageGroup, steerWheelMesh, beaconLightMesh;
+    let guideLineGroup, guideLineLeft, guideLineRight;
+    let coneMeshes = [];
+
+    function createAsphaltTexture() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const g = c.getContext('2d');
+      g.fillStyle = '#d3d8de';
+      g.fillRect(0, 0, 512, 512);
+
+      // Subtle concrete aggregate noise
+      for (let i = 0; i < 3600; i++) {
+        const px = Math.random() * 512;
+        const py = Math.random() * 512;
+        const shade = Math.random() > 0.5 ? 'rgba(255,255,255,0.18)' : 'rgba(90,100,115,0.14)';
+        g.fillStyle = shade;
+        g.fillRect(px, py, 2, 2);
+      }
+
+      // Expansion joint grid lines for speed perception
+      g.strokeStyle = 'rgba(130, 140, 152, 0.25)';
+      g.lineWidth = 2;
+      g.strokeRect(0, 0, 512, 512);
+      g.beginPath();
+      g.moveTo(256, 0); g.lineTo(256, 512);
+      g.moveTo(0, 256); g.lineTo(512, 256);
+      g.stroke();
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(26, 26);
+      return tex;
+    }
+
+    function createSignTexture(title, subtitle, bgHex, fgHex) {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 256;
+      const g = c.getContext('2d');
+      g.fillStyle = bgHex;
+      g.fillRect(0, 0, 512, 256);
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = 10;
+      g.strokeRect(12, 12, 488, 232);
+      g.fillStyle = fgHex;
+      g.textAlign = 'center';
+      g.font = 'bold 68px "Noto Sans TC", sans-serif';
+      g.fillText(title, 256, 122);
+      g.font = 'bold 34px "Noto Sans TC", sans-serif';
+      g.fillText(subtitle, 256, 188);
+      return new THREE.CanvasTexture(c);
+    }
+
+    function buildRibbonGeometry(points, offsetCenter, width) {
+      const positions = [];
+      const indices = [];
+      const halfW = width * 0.5;
+      for (let i = 0; i < points.length; i++) {
+        const pt = points[i];
+        const cx = pt.x + pt.rx * offsetCenter;
+        const cz = pt.z + pt.rz * offsetCenter;
+        const lx = cx - pt.rx * halfW;
+        const lz = cz - pt.rz * halfW;
+        const rx = cx + pt.rx * halfW;
+        const rz = cz + pt.rz * halfW;
+        positions.push(lx, 0.015, lz);
+        positions.push(rx, 0.015, rz);
+        if (i < points.length - 1) {
+          const base = i * 2;
+          indices.push(base, base + 2, base + 1);
+          indices.push(base + 1, base + 2, base + 3);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    function initScene() {
+      canvasEl = document.getElementById('sim-canvas');
+      if (!canvasEl) return;
+
+      renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xd7eaf8);
+      scene.fog = new THREE.Fog(0xd7eaf8, 45, 115);
+
+      camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.08, 160);
+
+      // Bright Daylight Lighting
+      const hemiLight = new THREE.HemisphereLight(0xf8fbff, 0x9aa3ad, 0.95);
+      scene.add(hemiLight);
+
+      const sunLight = new THREE.DirectionalLight(0xfffdf6, 1.35);
+      sunLight.position.set(18, 32, 14);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.width = 2048;
+      sunLight.shadow.mapSize.height = 2048;
+      sunLight.shadow.camera.near = 2;
+      sunLight.shadow.camera.far = 90;
+      sunLight.shadow.camera.left = -28;
+      sunLight.shadow.camera.right = 28;
+      sunLight.shadow.camera.top = 38;
+      sunLight.shadow.camera.bottom = -16;
+      sunLight.shadow.bias = -0.0005;
+      scene.add(sunLight);
+
+      // Clean Bright Concrete Test Ground
+      const groundTex = createAsphaltTexture();
+      const groundMat = new THREE.MeshStandardMaterial({
+        map: groundTex,
+        roughness: 0.88,
+        metalness: 0.05
+      });
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(0, 0, 15);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // Build S-Curve Course Meshes
+      buildSCurveCourse();
+
+      // Slightly darker clean driving lane asphalt inside S-curve
+      const laneGeo = buildRibbonGeometry(coursePoints, 0, LANE_HALF_WIDTH * 2);
+      const laneMat = new THREE.MeshStandardMaterial({ color: 0xbec6cf, roughness: 0.9 });
+      const laneMesh = new THREE.Mesh(laneGeo, laneMat);
+      laneMesh.position.y = -0.005;
+      laneMesh.receiveShadow = true;
+      scene.add(laneMesh);
+
+      // Widened High-Visibility Yellow Boundary Lines (Left & Right)
+      const yellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.45 });
+      const leftLine = new THREE.Mesh(buildRibbonGeometry(coursePoints, -LANE_HALF_WIDTH, 0.22), yellowMat);
+      const rightLine = new THREE.Mesh(buildRibbonGeometry(coursePoints, LANE_HALF_WIDTH, 0.22), yellowMat);
+      leftLine.receiveShadow = true;
+      rightLine.receiveShadow = true;
+      scene.add(leftLine);
+      scene.add(rightLine);
+
+      // Subtle dashed centerline reference (helps new trainees judge cab centering)
+      const centerDotMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.6 });
+      for (let idx = 2; idx < coursePoints.length - 2; idx += 6) {
+        const pt = coursePoints[idx];
+        const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.01, 0.55), centerDotMat);
+        dash.position.set(pt.x, 0.008, pt.z);
+        dash.rotation.y = pt.yaw;
+        scene.add(dash);
+      }
+
+      // Start Box & End Turnaround Zone Markings
+      const startBoxMat = new THREE.MeshStandardMaterial({ color: 0x0f62fe, roughness: 0.5 });
+      const startBox = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.32, 4), startBoxMat);
+      startBox.rotation.x = -Math.PI / 2;
+      startBox.rotation.z = Math.PI / 4;
+      startBox.position.set(startZoneCenter.x, 0.014, startZoneCenter.z);
+      scene.add(startBox);
+
+      const endBoxMat = new THREE.MeshStandardMaterial({ color: 0x198038, roughness: 0.5 });
+      const endBox = new THREE.Mesh(new THREE.RingGeometry(1.25, 1.44, 4), endBoxMat);
+      endBox.rotation.x = -Math.PI / 2;
+      endBox.rotation.z = Math.PI / 4;
+      endBox.position.set(endZoneCenter.x, 0.014, endZoneCenter.z);
+      scene.add(endBox);
+
+      // Start & Turnaround Overhead Signboards
+      addSignPost(startZoneCenter.x - 2.6, startZoneCenter.z - 1.2, startZoneCenter.yaw, '起點待機區', '請先完成 5 項 SOP', '#0f62fe', '#ffffff');
+      addSignPost(endZoneCenter.x + 2.6, endZoneCenter.z + 1.4, endZoneCenter.yaw, '終點折返區', '停穩後排入 R 檔倒車', '#198038', '#ffffff');
+
+      // Warehouse / Exam Yard Perimeter Fence Pillars for depth cues
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 });
+      for (let i = -24; i <= 24; i += 8) {
+        const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.6, 0.22), postMat);
+        p1.position.set(i, 0.8, -10);
+        p1.castShadow = true;
+        scene.add(p1);
+        const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.6, 0.22), postMat);
+        p2.position.set(i, 0.8, 42);
+        p2.castShadow = true;
+        scene.add(p2);
+      }
+
+      // Build Traffic Cones (角錐)
+      coneMeshes = [];
+      const coneGeo = new THREE.ConeGeometry(0.19, 0.68, 16);
+      const coneBaseGeo = new THREE.BoxGeometry(0.38, 0.05, 0.38);
+      const coneStripeGeo = new THREE.CylinderGeometry(0.105, 0.145, 0.16, 16);
+      const coneOrangeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+      const coneBaseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+      const coneWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 });
+
+      for (let i = 0; i < cones.length; i++) {
+        const cGroup = new THREE.Group();
+        const base = new THREE.Mesh(coneBaseGeo, coneBaseMat);
+        base.position.y = 0.025;
+        base.castShadow = true;
+        cGroup.add(base);
+
+        const body = new THREE.Mesh(coneGeo, coneOrangeMat);
+        body.position.y = 0.36;
+        body.castShadow = true;
+        cGroup.add(body);
+
+        const stripe = new THREE.Mesh(coneStripeGeo, coneWhiteMat);
+        stripe.position.y = 0.38;
+        cGroup.add(stripe);
+
+        cGroup.position.set(cones[i].x, 0, cones[i].z);
+        scene.add(cGroup);
+        coneMeshes.push(cGroup);
+      }
+
+      // Build Detailed Wide-View Forklift
+      buildForkliftModel();
+    }
+
+    function addSignPost(x, z, yaw, title, sub, bgHex, fgHex) {
+      const grp = new THREE.Group();
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.4, roughness: 0.5 });
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 10), poleMat);
+      pole.position.y = 1.1;
+      pole.castShadow = true;
+      grp.add(pole);
+
+      const boardTex = createSignTexture(title, sub, bgHex, fgHex);
+      const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.4 });
+      const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, 0.05), boardMat);
+      board.position.y = 2.1;
+      board.castShadow = true;
+      grp.add(board);
+
+      grp.position.set(x, 0, z);
+      grp.rotation.y = yaw;
+      scene.add(grp);
+    }
+
+    function buildForkliftModel() {
+      forkliftGroup = new THREE.Group();
+
+      const bodyYellow = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.35, metalness: 0.15 });
+      const darkSteel = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.55, metalness: 0.45 });
+      const tireMat = new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.85 });
+      const rimMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.4, metalness: 0.6 });
+      const forkSteel = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.65 });
+
+      // Main Chassis Frame (origin at ground level under front/rear midpoint, front axle at z=+0.84, rear axle at z=-0.84)
+      const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.46, 1.95), bodyYellow);
+      chassis.position.set(0, 0.44, -0.08);
+      chassis.castShadow = true;
+      chassis.receiveShadow = true;
+      forkliftGroup.add(chassis);
+
+      // Rear Counterweight (rounded heavy tail behind rear axle)
+      const counterweight = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.66, 0.68), bodyYellow);
+      counterweight.position.set(0, 0.62, -1.06);
+      counterweight.castShadow = true;
+      forkliftGroup.add(counterweight);
+
+      const tailBumper = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.16, 0.14), darkSteel);
+      tailBumper.position.set(0, 0.34, -1.42);
+      forkliftGroup.add(tailBumper);
+
+      // Seat & Floorboard
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.08, 0.88), darkSteel);
+      floor.position.set(0, 0.68, 0.08);
+      forkliftGroup.add(floor);
+
+      const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.44), darkSteel);
+      seatBase.position.set(0, 0.84, -0.32);
+      forkliftGroup.add(seatBase);
+      const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.48, 0.1), darkSteel);
+      seatBack.position.set(0, 1.12, -0.52);
+      forkliftGroup.add(seatBack);
+
+      // Steering Column & Mini 3D Wheel
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.56, 12), darkSteel);
+      col.position.set(0, 1.02, 0.34);
+      col.rotation.x = 0.38;
+      forkliftGroup.add(col);
+
+      steerWheelMesh = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.022, 8, 20), darkSteel);
+      steerWheelMesh.position.set(0, 1.28, 0.23);
+      steerWheelMesh.rotation.x = Math.PI / 2 - 0.38;
+      forkliftGroup.add(steerWheelMesh);
+
+      // Overhead Guard (FOPS) — Slim corner pillars placed wide so center cab view is completely unobstructed!
+      const pillarGeo = new THREE.CylinderGeometry(0.024, 0.024, 1.28, 8);
+      const pillarPositions = [
+        [-0.51, 1.38, 0.48],
+        [0.51, 1.38, 0.48],
+        [-0.51, 1.38, -0.78],
+        [0.51, 1.38, -0.78]
+      ];
+      for (let i = 0; i < pillarPositions.length; i++) {
+        const p = new THREE.Mesh(pillarGeo, darkSteel);
+        p.position.set(pillarPositions[i][0], pillarPositions[i][1], pillarPositions[i][2]);
+        p.castShadow = true;
+        forkliftGroup.add(p);
+      }
+      // Roof Frame (open rails so sky/lights pass through)
+      const roofSideL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.32), darkSteel);
+      roofSideL.position.set(-0.51, 2.02, -0.15);
+      const roofSideR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.32), darkSteel);
+      roofSideR.position.set(0.51, 2.02, -0.15);
+      const roofFront = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.05, 0.05), darkSteel);
+      roofFront.position.set(0, 2.02, 0.48);
+      const roofRear = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.05, 0.05), darkSteel);
+      roofRear.position.set(0, 2.02, -0.78);
+      forkliftGroup.add(roofSideL, roofSideR, roofFront, roofRear);
+
+      // Amber Safety Beacon on Rear Roof
+      const beaconMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 0.8 });
+      beaconLightMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.12, 12), beaconMat);
+      beaconLightMesh.position.set(0, 2.1, -0.76);
+      forkliftGroup.add(beaconLightMesh);
+
+      // Front Drive Wheels (fixed axis z = +0.84, r = 0.30)
+      function makeWheel(radius, width) {
+        const g = new THREE.Group();
+        const tire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, width, 20), tireMat);
+        tire.rotation.z = Math.PI / 2;
+        tire.castShadow = true;
+        g.add(tire);
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.56, radius * 0.56, width + 0.015, 14), rimMat);
+        rim.rotation.z = Math.PI / 2;
+        g.add(rim);
+        return g;
+      }
+
+      frontWheelL = makeWheel(0.30, 0.22);
+      frontWheelL.position.set(-0.52, 0.30, 0.84);
+      frontWheelR = makeWheel(0.30, 0.22);
+      frontWheelR.position.set(0.52, 0.30, 0.84);
+      forkliftGroup.add(frontWheelL, frontWheelR);
+
+      // Rear Steering Wheels (steered axis z = -0.84, r = 0.25)
+      rearHubL = new THREE.Group();
+      rearHubL.position.set(-0.46, 0.25, -0.84);
+      rearWheelL = makeWheel(0.25, 0.18);
+      rearHubL.add(rearWheelL);
+
+      rearHubR = new THREE.Group();
+      rearHubR.position.set(0.46, 0.25, -0.84);
+      rearWheelR = makeWheel(0.25, 0.18);
+      rearHubR.add(rearWheelR);
+      forkliftGroup.add(rearHubL, rearHubR);
+
+      // Wide-View Mast Assembly (寬視野門架 — pivot at front axle z = +1.06, y = 0.26)
+      // Wide spacing x = ±0.45m leaves a crystal-clear open window to view forks, cones, and yellow lines!
+      mastTiltGroup = new THREE.Group();
+      mastTiltGroup.position.set(0, 0.26, 1.06);
+
+      const mastBeamGeo = new THREE.BoxGeometry(0.065, 2.05, 0.095);
+      const mastLeft = new THREE.Mesh(mastBeamGeo, darkSteel);
+      mastLeft.position.set(-0.45, 0.96, 0);
+      mastLeft.castShadow = true;
+      const mastRight = new THREE.Mesh(mastBeamGeo, darkSteel);
+      mastRight.position.set(0.45, 0.96, 0);
+      mastRight.castShadow = true;
+      const mastTopTie = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.07, 0.08), darkSteel);
+      mastTopTie.position.set(0, 1.98, 0);
+      const mastLowTie = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.06, 0.08), darkSteel);
+      mastLowTie.position.set(0, 0.04, 0);
+      mastTiltGroup.add(mastLeft, mastRight, mastTopTie, mastLowTie);
+
+      // Fork Carriage & Two Forks (Moves vertically inside mastTiltGroup)
+      forkCarriageGroup = new THREE.Group();
+      // Backrest crossbars kept slim & high/low so center vision stays open
+      const carBarLow = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.07, 0.05), darkSteel);
+      carBarLow.position.set(0, 0.04, 0.06);
+      const carBarHigh = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.06, 0.05), darkSteel);
+      carBarHigh.position.set(0, 0.42, 0.06);
+      forkCarriageGroup.add(carBarLow, carBarHigh);
+
+      // Fork Blades (Left & Right, length 1.05m, high-contrast tip markers)
+      const tipPaint = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
+      function makeFork(xPos) {
+        const f = new THREE.Group();
+        const upright = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.44, 0.04), forkSteel);
+        upright.position.set(xPos, 0.21, 0.09);
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.036, 1.06), forkSteel);
+        blade.position.set(xPos, 0.018, 0.62);
+        blade.castShadow = true;
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.114, 0.038, 0.14), tipPaint);
+        tip.position.set(xPos, 0.019, 1.08);
+        f.add(upright, blade, tip);
+        return f;
+      }
+      forkCarriageGroup.add(makeFork(-0.26), makeFork(0.26));
+
+      // Place forkCarriageGroup so y=0 means forks sit ~0.04m above ground when mast is at 0
+      forkCarriageGroup.position.set(0, -0.22, 0);
+      mastTiltGroup.add(forkCarriageGroup);
+      forkliftGroup.add(mastTiltGroup);
+
+      // Dynamic Reverse Trajectory Guidelines (attached to forklift rear, visible in R gear / rear view)
+      guideLineGroup = new THREE.Group();
+      const guideMat = new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.9 });
+      guideLineLeft = new THREE.Line(new THREE.BufferGeometry(), guideMat);
+      guideLineRight = new THREE.Line(new THREE.BufferGeometry(), guideMat);
+      guideLineGroup.add(guideLineLeft, guideLineRight);
+      guideLineGroup.visible = false;
+      forkliftGroup.add(guideLineGroup);
+
+      scene.add(forkliftGroup);
+    }
+
+    // Update 3D Reverse Trajectory Arc based on current rear wheel steering angle
+    function updateReverseGuidelines() {
+      if (!guideLineGroup) return;
+      const show = (state.gear === 'R' || CAMERA_MODES[state.camIndex].id === 'rear');
+      guideLineGroup.visible = show;
+      if (!show) return;
+
+      const steerRad = (state.steerDeg * Math.PI) / 180;
+      const samples = 18;
+      const stepDist = 0.28;
+      const leftPts = [];
+      const rightPts = [];
+
+      // Simulate local vehicle path backward for 5 meters
+      let lx = 0, lz = -1.42, lyaw = 0;
+      for (let i = 0; i <= samples; i++) {
+        const halfTrack = 0.64;
+        const rx = Math.cos(lyaw);
+        const rz = -Math.sin(lyaw);
+        leftPts.push(new THREE.Vector3(lx - rx * halfTrack, 0.04, lz - rz * halfTrack));
+        rightPts.push(new THREE.Vector3(lx + rx * halfTrack, 0.04, lz + rz * halfTrack));
+
+        const dyaw = (-1.0 / WHEELBASE) * Math.tan(steerRad) * (-stepDist);
+        lyaw += dyaw;
+        lx += Math.sin(lyaw) * (-stepDist);
+        lz += Math.cos(lyaw) * (-stepDist);
+      }
+      guideLineLeft.geometry.setFromPoints(leftPts);
+      guideLineRight.geometry.setFromPoints(rightPts);
+    }
+
+    // =========================================================================
+    // 5. PHYSICS, COLLISIONS & STAGE EVALUATION
+    // =========================================================================
+    function findClosestCoursePoint(wx, wz) {
+      let bestDistSq = Infinity;
+      let bestIdx = 0;
+      for (let i = 0; i < coursePoints.length; i++) {
+        const dx = wx - coursePoints[i].x;
+        const dz = wz - coursePoints[i].z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < bestDistSq) {
+          bestDistSq = d2;
+          bestIdx = i;
+        }
+      }
+      const pt = coursePoints[bestIdx];
+      const lateral = (wx - pt.x) * pt.rx + (wz - pt.z) * pt.rz;
+      return { idx: bestIdx, pt: pt, lateral: lateral, distSq: bestDistSq };
+    }
+
+    function recordViolation(reason, points) {
+      const now = state.elapsedTime;
+      if (now - state.lastCollisionAt < 1.6) return;
+      state.lastCollisionAt = now;
+
+      state.score = Math.max(0, state.score - points);
+      const mins = Math.floor(state.timerSec / 60);
+      const secs = Math.floor(state.timerSec % 60);
+      const stamp = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      state.violations.unshift({ time: stamp, reason: reason, points: points });
+
+      playTone(210, 0.28, 'sawtooth', 0.12);
+      const vig = document.getElementById('collision-vignette');
+      if (vig) {
+        vig.classList.add('is-hit');
+        setTimeout(function() { vig.classList.remove('is-hit'); }, 320);
+      }
+      showToast(`${reason}（扣 ${points} 分）`, 'error');
+      updateHudUI();
+    }
+
+    function updatePhysics(dt) {
+      if (state.stage === 3) return; // Completed
+
+      state.elapsedTime += dt;
+      if (state.timerRunning && state.timerSec > 0) {
+        state.timerSec = Math.max(0, state.timerSec - dt);
+        if (state.timerSec === 0) {
+          finishExam(false, `超過 8 分鐘考場規定時間`);
+          return;
+        }
+      }
+
+      // 1. Hydraulics (Smooth continuous control while button/key held)
+      const liftSpeed = 22.0; // cm/sec
+      if (heldInputs.liftUp) {
+        state.forkHeightCm = Math.min(115, state.forkHeightCm + liftSpeed * dt);
+        if (Math.random() < 0.25) playTone(165, 0.06, 'triangle', 0.02);
+      }
+      if (heldInputs.liftDown) {
+        state.forkHeightCm = Math.max(0, state.forkHeightCm - liftSpeed * dt);
+        if (Math.random() < 0.25) playTone(135, 0.06, 'triangle', 0.02);
+      }
+
+      const tiltSpeed = 5.5; // deg/sec
+      if (heldInputs.tiltBack) {
+        state.mastTiltDeg = Math.min(8.0, state.mastTiltDeg + tiltSpeed * dt);
+      }
+      if (heldInputs.tiltFwd) {
+        state.mastTiltDeg = Math.max(-5.0, state.mastTiltDeg - tiltSpeed * dt);
+      }
+
+      // 2. Keyboard Steering (A = left, D = right)
+      const keySteerRate = 85.0; // deg/sec
+      if (heldInputs.steerLeft) {
+        state.steerDeg = Math.max(-MAX_STEER_DEG, state.steerDeg - keySteerRate * dt);
+      }
+      if (heldInputs.steerRight) {
+        state.steerDeg = Math.min(MAX_STEER_DEG, state.steerDeg + keySteerRate * dt);
+      }
+
+      // 3. Throttle & Brake
+      const maxSpeedFwd = 2.6;  // ~9.4 km/h realistic indoor exam top speed
+      const maxSpeedRev = 2.2;
+      const accel = 2.4;
+      const brakeDecel = 5.2;
+      const coastDecel = 1.6;
+
+      let movingRequested = heldInputs.gas;
+      if (movingRequested && !state.timerRunning) {
+        state.timerRunning = true; // Start 8:00 clock on first drive attempt
+      }
+
+      if (heldInputs.gas && state.parkingBrake) {
+        showToast(`手煞車尚未鬆開！請先按 [P] 或點擊 SOP 鬆開手煞車`, 'error');
+        movingRequested = false;
+      } else if (heldInputs.gas && state.gear === 'N') {
+        if (!state.wrongGearPenalized) {
+          showToast(`目前為空檔 (N)，請排入 F 前進或 R 後退檔`, 'normal');
+        }
+        movingRequested = false;
+      }
+
+      if (heldInputs.brake || state.parkingBrake) {
+        if (state.speed > 0) state.speed = Math.max(0, state.speed - brakeDecel * dt);
+        else if (state.speed < 0) state.speed = Math.min(0, state.speed + brakeDecel * dt);
+      } else if (movingRequested) {
+        if (state.gear === 'F') {
+          state.speed = Math.min(maxSpeedFwd, state.speed + accel * dt);
+        } else if (state.gear === 'R') {
+          state.speed = Math.max(-maxSpeedRev, state.speed - accel * dt);
+        }
+      } else {
+        if (state.speed > 0) state.speed = Math.max(0, state.speed - coastDecel * dt);
+        else if (state.speed < 0) state.speed = Math.min(0, state.speed + coastDecel * dt);
+      }
+
+      // 4. Rear-Wheel Steering Bicycle Kinematics
+      // Forklift yaw: +yaw turns nose RIGHT (+X) when moving forward (+Z)
+      const steerRad = (state.steerDeg * Math.PI) / 180;
+      const yawRate = (state.speed / WHEELBASE) * Math.tan(steerRad);
+      state.yaw += yawRate * dt;
+      state.x += Math.sin(state.yaw) * state.speed * dt;
+      state.z += Math.cos(state.yaw) * state.speed * dt;
+
+      // Keep inside yard bounds
+      state.x = Math.max(-28, Math.min(28, state.x));
+      state.z = Math.max(-8, Math.min(40, state.z));
+
+      // Check if driving out of Start Box without finishing 5 SOP steps
+      if (!state.sopPenalized && Math.abs(state.speed) > 0.25 && state.z > 4.6) {
+        if (!isAllSopReady()) {
+          state.sopPenalized = true;
+          recordViolation(`未完成起步前 5 項 SOP 即駛出起點`, 16);
+        }
+      }
+
+      // 5. Boundary & Cone Collision Detection (Forklift OBB sample points)
+      const fx = Math.sin(state.yaw);
+      const fz = Math.cos(state.yaw);
+      const rx = Math.cos(state.yaw);
+      const rz = -Math.sin(state.yaw);
+
+      // 6 outer perimeter check points: 2 fork tips, 2 front corners, 2 rear counterweight corners
+      const checkOffsets = [
+        { f: 2.12, r: -0.32, name: '左貨叉尖' },
+        { f: 2.12, r: 0.32, name: '右貨叉尖' },
+        { f: 1.05, r: -0.56, name: '左前輪側' },
+        { f: 1.05, r: 0.56, name: '右前輪側' },
+        { f: -1.38, r: -0.57, name: '左後配重尾' },
+        { f: -1.38, r: 0.57, name: '右後配重尾' }
+      ];
+
+      for (let i = 0; i < checkOffsets.length; i++) {
+        const o = checkOffsets[i];
+        const px = state.x + fx * o.f + rx * o.r;
+        const pz = state.z + fz * o.f + rz * o.r;
+
+        // Yellow line check
+        const res = findClosestCoursePoint(px, pz);
+        if (Math.abs(res.lateral) >= LANE_HALF_WIDTH - 0.08 && res.idx > 4 && res.idx < coursePoints.length - 4) {
+          recordViolation(`壓線違規（${o.name}壓觸黃線）`, 16);
+          // Gentle bounce back toward centerline so forklift doesn't drive completely off course
+          const sign = res.lateral > 0 ? 1 : -1;
+          state.x -= res.pt.rx * sign * 0.08;
+          state.z -= res.pt.rz * sign * 0.08;
+          state.speed *= 0.4;
+          break;
+        }
+
+        // Cone collision check
+        for (let c = 0; c < cones.length; c++) {
+          const dx = px - cones[c].x;
+          const dz = pz - cones[c].z;
+          if (dx * dx + dz * dz < CONE_RADIUS * CONE_RADIUS) {
+            if (cones[c].hitTilt === 0) {
+              cones[c].hitTilt = 0.85;
+              const len = Math.max(0.01, Math.hypot(dx, dz));
+              cones[c].hitDirX = -dx / len;
+              cones[c].hitDirZ = -dz / len;
+            }
+            recordViolation(`碰撞角錐（${o.name}）`, 16);
+            state.speed *= 0.35;
+            break;
+          }
+        }
+      }
+
+      // 6. Stage Progression Checks
+      if (state.stage === 1) {
+        const dxEnd = state.x - endZoneCenter.x;
+        const dzEnd = state.z - endZoneCenter.z;
+        const distEnd = Math.hypot(dxEnd, dzEnd);
+        if (distEnd < 1.35 && Math.abs(state.speed) < 0.15) {
+          state.stage = 2;
+          playTone(660, 0.14, 'sine', 0.1);
+          setTimeout(function() { playTone(880, 0.2, 'sine', 0.1); }, 140);
+          showToast(`完成階段一！請排入 R 檔進行 S 型倒車回起點`, 'success');
+          updateHudUI();
+        }
+      } else if (state.stage === 2) {
+        const dxStart = state.x - startZoneCenter.x;
+        const dzStart = state.z - startZoneCenter.z;
+        const distStart = Math.hypot(dxStart, dzStart);
+        if (distStart < 1.35 && Math.abs(state.speed) < 0.15) {
+          finishExam(true, `順利完成 S 型前進與倒車路線！`);
+        }
+      }
+
+      // Reverse beeper sound
+      playReverseBeep(state.elapsedTime);
+
+      // Head-check glance decay
+      if (state.glanceAnim > 0) {
+        state.glanceAnim = Math.max(0, state.glanceAnim - dt * 1.6);
+      }
+    }
+
+    // =========================================================================
+    // 6. 3D VISUAL SYNC & CAMERA MODES
+    // =========================================================================
+    function sync3DModels(dt) {
+      if (!forkliftGroup) return;
+
+      forkliftGroup.position.set(state.x, 0, state.z);
+      forkliftGroup.rotation.y = state.yaw;
+
+      // Wheel rotation (rolling) & Rear steering angle
+      const wheelRollDelta = state.speed * dt;
+      if (frontWheelL && frontWheelR) {
+        frontWheelL.rotation.x += wheelRollDelta / 0.30;
+        frontWheelR.rotation.x += wheelRollDelta / 0.30;
+      }
+      if (rearWheelL && rearWheelR && rearHubL && rearHubR) {
+        rearWheelL.rotation.x += wheelRollDelta / 0.25;
+        rearWheelR.rotation.x += wheelRollDelta / 0.25;
+        // Visual rear wheels angle opposite to nose turn direction
+        const steerRad = (state.steerDeg * Math.PI) / 180;
+        rearHubL.rotation.y = -steerRad;
+        rearHubR.rotation.y = -steerRad;
+      }
+
+      // 3D Cab steering wheel
+      if (steerWheelMesh) {
+        steerWheelMesh.rotation.z = -(state.steerDeg * 4.5 * Math.PI) / 180;
+      }
+
+      // Mast tilt (backward = tilt mast back toward cab = negative rotation.x in local +Z forward coords)
+      if (mastTiltGroup) {
+        mastTiltGroup.rotation.x = -(state.mastTiltDeg * Math.PI) / 180;
+      }
+
+      // Fork height (cm -> meters)
+      if (forkCarriageGroup) {
+        forkCarriageGroup.position.y = -0.22 + (state.forkHeightCm / 100.0);
+      }
+
+      // Cone knockdown animation
+      for (let i = 0; i < cones.length; i++) {
+        if (cones[i].hitTilt > 0 && coneMeshes[i]) {
+          coneMeshes[i].rotation.z = cones[i].hitDirX * cones[i].hitTilt;
+          coneMeshes[i].rotation.x = -cones[i].hitDirZ * cones[i].hitTilt;
+        } else if (coneMeshes[i]) {
+          coneMeshes[i].rotation.set(0, 0, 0);
+        }
+      }
+
+      // Beacon pulse
+      if (beaconLightMesh && beaconLightMesh.material) {
+        beaconLightMesh.material.emissiveIntensity = 0.45 + 0.55 * Math.abs(Math.sin(state.elapsedTime * 5.0));
+      }
+
+      updateReverseGuidelines();
+      updateCameraTransform();
+    }
+
+    function updateCameraTransform() {
+      if (!camera) return;
+
+      const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+      const modeId = CAMERA_MODES[state.camIndex].id;
+
+      // Adapt vertical FOV for portrait mobile so horizontal lane lines remain clearly visible
+      let baseFov = 62;
+      if (modeId === 'cab') {
+        baseFov = aspect < 1.0 ? Math.min(86, 62 / Math.max(0.62, aspect * 0.85)) : 64;
+      } else if (modeId === 'rear') {
+        baseFov = aspect < 1.0 ? Math.min(88, 66 / Math.max(0.62, aspect * 0.85)) : 68;
+      } else {
+        baseFov = aspect < 1.0 ? 74 : 58;
+      }
+      if (Math.abs(camera.fov - baseFov) > 0.2) {
+        camera.fov = baseFov;
+        camera.updateProjectionMatrix();
+      }
+
+      const fx = Math.sin(state.yaw);
+      const fz = Math.cos(state.yaw);
+      const rx = Math.cos(state.yaw);
+      const rz = -Math.sin(state.yaw);
+
+      if (modeId === 'cab') {
+        // Optimal wide-view operator perspective looking cleanly through the mast opening
+        const glanceOffset = Math.sin(state.glanceAnim * Math.PI * 2) * 0.45;
+        const eyeX = state.x + fx * (-0.18) + rx * 0.0;
+        const eyeY = 1.66;
+        const eyeZ = state.z + fz * (-0.18) + rz * 0.0;
+
+        const lookX = state.x + fx * 5.5 + rx * glanceOffset;
+        const lookY = 0.55;
+        const lookZ = state.z + fz * 5.5 + rz * glanceOffset;
+
+        camera.position.set(eyeX, eyeY, eyeZ);
+        camera.lookAt(lookX, lookY, lookZ);
+      } else if (modeId === 'rear') {
+        // Rear backup camera mounted on rear overhead guard looking back at counterweight & tail path
+        const camX = state.x + fx * (-0.42);
+        const camY = 2.08;
+        const camZ = state.z + fz * (-0.42);
+
+        const lookX = state.x - fx * 4.8;
+        const lookY = 0.22;
+        const lookZ = state.z - fz * 4.8;
+
+        camera.position.set(camX, camY, camZ);
+        camera.lookAt(lookX, lookY, lookZ);
+      } else if (modeId === 'side') {
+        // Right side curb/yellow-line monitor camera
+        const camX = state.x + rx * 2.1 + fx * (-0.8);
+        const camY = 1.75;
+        const camZ = state.z + rz * 2.1 + fz * (-0.8);
+
+        const lookX = state.x + rx * 0.35 + fx * 0.4;
+        const lookY = 0.25;
+        const lookZ = state.z + rz * 0.35 + fz * 0.4;
+
+        camera.position.set(camX, camY, camZ);
+        camera.lookAt(lookX, lookY, lookZ);
+      } else {
+        // Elevated 3/4 overhead follow view
+        const dirSign = state.gear === 'R' ? 1 : -1;
+        const camX = state.x + fx * (5.2 * dirSign) + rx * 2.4;
+        const camY = 7.4;
+        const camZ = state.z + fz * (5.2 * dirSign) + rz * 2.4;
+
+        camera.position.set(camX, camY, camZ);
+        camera.lookAt(state.x + fx * (-1.2 * dirSign), 0.4, state.z + fz * (-1.2 * dirSign));
+      }
+    }
+
+    // =========================================================================
+    // 7. UI UPDATES & INTERACTIVE CONTROLS (All handlers hoisted functions)
+    // =========================================================================
+    let toastTimer = null;
+    function showToast(msg, tone) {
+      const el = document.getElementById('hud-toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 'hud-toast is-show';
+      if (tone === 'error') el.classList.add('is-error');
+      else if (tone === 'success') el.classList.add('is-success');
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() {
+        el.classList.remove('is-show');
+      }, 2600);
+    }
+
+    function isForkHeightValid() {
+      return state.forkHeightCm >= 15.0 && state.forkHeightCm <= 20.0;
+    }
+
+    function isMastTiltValid() {
+      return state.mastTiltDeg >= 3.0 && state.mastTiltDeg <= 5.0;
+    }
+
+    function isAllSopReady() {
+      return state.seatbelt && state.handSignal && !state.parkingBrake && isForkHeightValid() && isMastTiltValid();
+    }
+
+    function toggleSopDrawer() {
+      state.sopOpen = !state.sopOpen;
+      const panel = document.getElementById('sop-panel');
+      const btn = document.getElementById('sop-toggle-btn');
+      const chev = document.getElementById('sop-chevron');
+      if (panel) panel.classList.toggle('is-open', state.sopOpen);
+      if (btn) btn.setAttribute('aria-expanded', state.sopOpen ? 'true' : 'false');
+      if (chev) chev.textContent = state.sopOpen ? '▴' : '▾';
+    }
+
+    function toggleSeatbelt() {
+      state.seatbelt = !state.seatbelt;
+      playTone(state.seatbelt ? 520 : 320, 0.1, 'triangle', 0.08);
+      showToast(state.seatbelt ? `1. 已繫妥安全帶` : `已解開安全帶`, state.seatbelt ? 'success' : 'normal');
+      updateHudUI();
+    }
+
+    function triggerHandSignal() {
+      state.handSignal = true;
+      state.glanceAnim = 1.0;
+      playTone(640, 0.1, 'sine', 0.07);
+      showToast(`2. 已完成左右環顧並舉手示意`, 'success');
+      updateHudUI();
+    }
+
+    function toggleParkingBrake() {
+      state.parkingBrake = !state.parkingBrake;
+      playTone(state.parkingBrake ? 240 : 420, 0.12, 'square', 0.05);
+      showToast(state.parkingBrake ? `手煞車已拉起` : `3. 已鬆開手煞車，可準備起步`, state.parkingBrake ? 'normal' : 'success');
+      updateHudUI();
+    }
+
+    function focusLiftHint() {
+      showToast(`請操作右側「升降桿」按「下 (▼)」將貨叉升高至 15~20 公分`, 'normal');
+    }
+
+    function focusTiltHint() {
+      showToast(`請操作右側「傾斜桿」按「下 (▼)」將門架後仰 3~5 度`, 'normal');
+    }
+
+    function setGear(gear) {
+      if (state.gear === gear) return;
+      // Check mid-course gear reversal penalty
+      if (state.stage === 1 && gear === 'R' && state.z > 5.0 && Math.hypot(state.x - endZoneCenter.x, state.z - endZoneCenter.z) > 1.8) {
+        recordViolation(`階段一前進中途切換倒車檔`, 16);
+      } else if (state.stage === 2 && gear === 'F' && Math.hypot(state.x - startZoneCenter.x, state.z - startZoneCenter.z) > 1.8) {
+        recordViolation(`階段二倒車中途切換前進檔`, 16);
+      }
+
+      state.gear = gear;
+      playTone(gear === 'N' ? 300 : 440, 0.09, 'triangle', 0.07);
+
+      // Auto-switch to Reverse Rear Camera when shifting to R!
+      if (gear === 'R' && CAMERA_MODES[state.camIndex].id !== 'rear') {
+        state.camIndex = 1; // rear
+        state.autoSwitchedToRear = true;
+        showToast(`已排入 R 檔：自動切換車尾倒車視野`, 'normal');
+      } else if (gear === 'F' && state.autoSwitchedToRear && CAMERA_MODES[state.camIndex].id === 'rear') {
+        state.camIndex = 0; // back to cab
+        state.autoSwitchedToRear = false;
+        showToast(`已排入 F 檔：切回駕駛座主視野`, 'normal');
+      }
+      updateHudUI();
+    }
+
+    function centerSteeringWheel() {
+      state.steerDeg = 0.0;
+      playTone(480, 0.08, 'sine', 0.06);
+      updateHudUI();
+    }
+
+    function cycleCamera() {
+      state.camIndex = (state.camIndex + 1) % CAMERA_MODES.length;
+      state.autoSwitchedToRear = false;
+      playTone(540, 0.07, 'sine', 0.05);
+      showToast(`視角切換：${CAMERA_MODES[state.camIndex].label}`, 'normal');
+      updateHudUI();
+    }
+
+    function toggleAudio() {
+      state.soundEnabled = !state.soundEnabled;
+      const iconOn = document.getElementById('sound-icon-on');
+      const iconOff = document.getElementById('sound-icon-off');
+      if (iconOn) iconOn.style.display = state.soundEnabled ? 'block' : 'none';
+      if (iconOff) iconOff.style.display = state.soundEnabled ? 'none' : 'block';
+      savePersistentState();
+    }
+
+    function startHold(action, btnEl) {
+      if (action in heldInputs) heldInputs[action] = true;
+      if (btnEl) btnEl.classList.add('is-pressed');
+      ensureAudioCtx();
+    }
+
+    function stopHold(action, btnEl) {
+      if (action in heldInputs) heldInputs[action] = false;
+      if (btnEl) btnEl.classList.remove('is-pressed');
+    }
+
+    function updateHudUI() {
+      // SOP items
+      const sopFlags = [
+        state.seatbelt,
+        state.handSignal,
+        !state.parkingBrake,
+        isForkHeightValid(),
+        isMastTiltValid()
+      ];
+      let doneCount = 0;
+      for (let i = 0; i < 5; i++) {
+        if (sopFlags[i]) doneCount++;
+        const dot = document.getElementById('dot-' + i);
+        const row = document.getElementById('sop-row-' + i);
+        if (dot) {
+          dot.classList.toggle('done', sopFlags[i]);
+        }
+        if (row) {
+          row.classList.toggle('is-done', sopFlags[i]);
+        }
+      }
+
+      const badge = document.getElementById('sop-count-badge');
+      if (badge) {
+        badge.textContent = `${doneCount}/5`;
+        badge.classList.toggle('all-done', doneCount === 5);
+      }
+      const sumText = document.getElementById('sop-summary-text');
+      if (sumText) sumText.textContent = doneCount === 5 ? `檢核全數完成 ✓` : `完成 ${doneCount} / 5`;
+
+      const s0 = document.getElementById('sop-status-0');
+      if (s0) s0.textContent = state.seatbelt ? `已繫妥 ✓` : `未繫`;
+      const s1 = document.getElementById('sop-status-1');
+      if (s1) s1.textContent = state.handSignal ? `已示意 ✓` : `未示意`;
+      const s2 = document.getElementById('sop-status-2');
+      if (s2) s2.textContent = !state.parkingBrake ? `已鬆開 ✓` : `已拉起`;
+
+      const s3 = document.getElementById('sop-status-3');
+      const r3 = document.getElementById('sop-row-3');
+      if (s3) s3.textContent = `${state.forkHeightCm.toFixed(1)} cm${isForkHeightValid() ? ' ✓' : ''}`;
+      if (r3) r3.classList.toggle('is-warn', state.forkHeightCm > 20.5);
+
+      const s4 = document.getElementById('sop-status-4');
+      const r4 = document.getElementById('sop-row-4');
+      const tiltStr = state.mastTiltDeg >= 0
+        ? `後仰 ${state.mastTiltDeg.toFixed(1)}°`
+        : `前傾 ${Math.abs(state.mastTiltDeg).toFixed(1)}°`;
+      if (s4) s4.textContent = `${tiltStr}${isMastTiltValid() ? ' ✓' : ''}`;
+      if (r4) r4.classList.toggle('is-warn', state.mastTiltDeg > 5.3 || state.mastTiltDeg < -0.5);
+
+      // Stage, Timer, Score
+      const stageEl = document.getElementById('stage-label');
+      if (stageEl) {
+        stageEl.className = 'stage-tag';
+        if (state.stage === 1) stageEl.textContent = `階段一：S型前進`;
+        else if (state.stage === 2) {
+          stageEl.textContent = `階段二：S型後退`;
+          stageEl.classList.add('is-reverse');
+        } else {
+          stageEl.textContent = `檢定完成`;
+          stageEl.classList.add('is-complete');
+        }
+      }
+
+      const timerEl = document.getElementById('timer-display');
+      if (timerEl) {
+        const m = Math.floor(state.timerSec / 60);
+        const s = Math.floor(state.timerSec % 60);
+        timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        timerEl.classList.toggle('is-low', state.timerSec <= 60);
+      }
+
+      const scoreEl = document.getElementById('score-display');
+      if (scoreEl) {
+        scoreEl.textContent = `${state.score} 分`;
+        scoreEl.classList.toggle('is-low', state.score < 70);
+      }
+
+      // Camera Label & Reverse Banner
+      const camMode = CAMERA_MODES[state.camIndex];
+      const camLbl = document.getElementById('cam-label');
+      if (camLbl) camLbl.textContent = `視角: ${camMode.label}`;
+      const camBanner = document.getElementById('cam-banner');
+      const camBannerText = document.getElementById('cam-banner-text');
+      if (camBanner && camBannerText) {
+        const showBanner = (camMode.id === 'rear' || camMode.id === 'side');
+        camBanner.classList.toggle('is-visible', showBanner);
+        camBannerText.textContent = camMode.id === 'rear'
+          ? `CAM-R 車尾倒車視野（含後輪轉向預測線）`
+          : `CAM-S 右側輪貼線視野（觀察黃線與後甩距離）`;
+      }
+
+      // Steering wheel rotor & angle readout
+      const rotor = document.getElementById('wheel-rotor');
+      if (rotor) {
+        rotor.style.transform = `rotate(${state.steerDeg * 4.5}deg)`;
+      }
+      const wheelReadout = document.getElementById('wheel-angle-readout');
+      if (wheelReadout) {
+        const absDeg = Math.round(Math.abs(state.steerDeg));
+        const dirText = absDeg < 2 ? `回正 0°` : (state.steerDeg > 0 ? `右轉 ${absDeg}°` : `左轉 ${absDeg}°`);
+        wheelReadout.textContent = `後輪 ${dirText}`;
+        wheelReadout.classList.toggle('is-centered', absDeg < 2);
+      }
+
+      // Gear Shifter Buttons
+      const gF = document.getElementById('gear-F');
+      const gN = document.getElementById('gear-N');
+      const gR = document.getElementById('gear-R');
+      if (gF) gF.className = 'gear-btn' + (state.gear === 'F' ? ' is-active-f' : '');
+      if (gN) gN.className = 'gear-btn' + (state.gear === 'N' ? ' is-active-n' : '');
+      if (gR) gR.className = 'gear-btn' + (state.gear === 'R' ? ' is-active-r' : '');
+
+      // Hydraulic Readouts
+      const fhEl = document.getElementById('fork-height-readout');
+      if (fhEl) {
+        fhEl.textContent = `${state.forkHeightCm.toFixed(1)} cm`;
+        fhEl.className = 'lever-readout' + (isForkHeightValid() ? ' in-target' : (state.forkHeightCm > 20.5 ? ' is-over' : ''));
+      }
+      const mtEl = document.getElementById('mast-tilt-readout');
+      if (mtEl) {
+        mtEl.textContent = state.mastTiltDeg >= 0
+          ? `仰 ${state.mastTiltDeg.toFixed(1)}°`
+          : `傾 ${Math.abs(state.mastTiltDeg).toFixed(1)}°`;
+        mtEl.className = 'lever-readout' + (isMastTiltValid() ? ' in-target' : (state.mastTiltDeg > 5.3 ? ' is-over' : ''));
+      }
+
+      // Mini Telemetry
+      const spdEl = document.getElementById('speed-readout');
+      if (spdEl) spdEl.textContent = `${(Math.abs(state.speed) * 3.6).toFixed(1)} km/h`;
+
+      const pbPill = document.getElementById('pbrake-pill');
+      if (pbPill) {
+        pbPill.textContent = state.parkingBrake ? `手煞車鎖定 [P]` : `手煞車已放`;
+        pbPill.classList.toggle('is-off', !state.parkingBrake);
+      }
+
+      const bestEl = document.getElementById('best-record-readout');
+      if (bestEl) {
+        if (state.bestScore !== null) {
+          bestEl.textContent = `最佳: ${state.bestScore}分 (${state.completedRuns}次)`;
+        } else {
+          bestEl.textContent = `最佳: 尚無完賽`;
+        }
+      }
+    }
+
+    // =========================================================================
+    // 8. MODAL, EXAM COMPLETION & RESET
+    // =========================================================================
+    function openGuideModal() {
+      const modal = document.getElementById('exam-modal');
+      const card = document.getElementById('modal-card');
+      const title = document.getElementById('modal-title');
+      const sub = document.getElementById('modal-sub');
+      const guideBody = document.getElementById('modal-guide-body');
+      const logList = document.getElementById('modal-log-list');
+      const closeBtn = document.getElementById('modal-close-btn');
+
+      if (card) card.className = 'modal-card';
+      if (title) title.textContent = `堆高機第二站：S型基本駕駛說明`;
+      if (sub) sub.textContent = `依據技術士技能檢定規範，於 8 分鐘內完成 SOP 檢核、S 型前進及 S 型倒車。`;
+      if (guideBody) guideBody.style.display = 'block';
+      if (logList) logList.style.display = 'none';
+      if (closeBtn) closeBtn.textContent = `繼續練習`;
+
+      syncModalMetrics();
+      if (modal) modal.classList.add('is-open');
+    }
+
+    function finishExam(passed, message) {
+      state.stage = 3;
+      state.timerRunning = false;
+      state.speed = 0;
+
+      const finalPass = passed && state.score >= 70;
+      if (finalPass) {
+        state.completedRuns += 1;
+        if (state.bestScore === null || state.score > state.bestScore) {
+          state.bestScore = state.score;
+          state.bestTimeRemaining = Math.round(state.timerSec);
+        }
+        savePersistentState();
+        playTone(523, 0.14, 'sine', 0.12);
+        setTimeout(function() { playTone(659, 0.14, 'sine', 0.12); }, 140);
+        setTimeout(function() { playTone(784, 0.28, 'sine', 0.12); }, 280);
+      } else {
+        playTone(220, 0.35, 'sawtooth', 0.12);
+      }
+
+      const modal = document.getElementById('exam-modal');
+      const card = document.getElementById('modal-card');
+      const title = document.getElementById('modal-title');
+      const sub = document.getElementById('modal-sub');
+      const guideBody = document.getElementById('modal-guide-body');
+      const logList = document.getElementById('modal-log-list');
+      const closeBtn = document.getElementById('modal-close-btn');
+
+      if (card) card.className = 'modal-card ' + (finalPass ? 'is-pass' : 'is-fail');
+      if (title) title.textContent = finalPass ? `檢定合格！成績 ${state.score} 分` : `未達合格標準 (${state.score} 分)`;
+      if (sub) sub.textContent = message;
+      if (guideBody) guideBody.style.display = 'none';
+      if (closeBtn) closeBtn.textContent = `檢視考場畫面`;
+
+      if (logList) {
+        logList.style.display = 'block';
+        if (state.violations.length === 0) {
+          logList.innerHTML = `<li><span>全程零壓線、零撞錐、SOP 完全正確</span><span style="color:var(--positive);font-weight:600;">完美通過</span></li>`;
+        } else {
+          logList.innerHTML = state.violations.map(function(v) {
+            return `<li><span>[${v.time}] ${v.reason}</span><span style="color:var(--error);font-weight:600;">-${v.points} 分</span></li>`;
+          }).join('');
+        }
+      }
+
+      syncModalMetrics();
+      updateHudUI();
+      if (modal) modal.classList.add('is-open');
+    }
+
+    function syncModalMetrics() {
+      const sc = document.getElementById('res-score');
+      const tm = document.getElementById('res-time');
+      const vl = document.getElementById('res-violations');
+      const m = Math.floor(state.timerSec / 60);
+      const s = Math.floor(state.timerSec % 60);
+      if (sc) sc.textContent = `${state.score}`;
+      if (tm) tm.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      if (vl) vl.textContent = `${state.violations.length}`;
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('exam-modal');
+      if (modal) modal.classList.remove('is-open');
+    }
+
+    function resetSimulation() {
+      state.seatbelt = false;
+      state.handSignal = false;
+      state.parkingBrake = true;
+      state.forkHeightCm = 0.0;
+      state.mastTiltDeg = 0.0;
+
+      state.gear = 'N';
+      state.steerDeg = 0.0;
+      state.speed = 0.0;
+      state.x = 0.0;
+      state.z = 2.2;
+      state.yaw = 0.0;
+
+      state.stage = 1;
+      state.timerSec = EXAM_DURATION_SEC;
+      state.timerRunning = false;
+      state.score = 100;
+      state.violations = [];
+      state.sopPenalized = false;
+      state.wrongGearPenalized = false;
+      state.lastCollisionAt = -999;
+      state.camIndex = 0;
+      state.autoSwitchedToRear = false;
+
+      for (let i = 0; i < cones.length; i++) {
+        cones[i].hitTilt = 0;
+      }
+
+      showToast(`已重設考場：請依序完成 5 項 SOP 後起步`, 'normal');
+      updateHudUI();
+    }
+
+    // =========================================================================
+    // 9. TOUCH/MOUSE STEERING WHEEL DRAG & KEYBOARD BINDINGS
+    // =========================================================================
+    function setupSteeringWheelInteraction() {
+      const stage = document.getElementById('wheel-stage');
+      if (!stage) return;
+
+      let dragging = false;
+      let prevAngle = 0;
+
+      function getPointerAngle(clientX, clientY) {
+        const rect = stage.getBoundingClientRect();
+        const cx = rect.left + rect.width * 0.5;
+        const cy = rect.top + rect.height * 0.5;
+        return Math.atan2(clientY - cy, clientX - cx);
+      }
+
+      stage.addEventListener('pointerdown', function(e) {
+        if (e.target && e.target.closest && e.target.closest('#center-wheel-btn')) return;
+        dragging = true;
+        prevAngle = getPointerAngle(e.clientX, e.clientY);
+        stage.setPointerCapture(e.pointerId);
+        ensureAudioCtx();
+      });
+
+      stage.addEventListener('pointermove', function(e) {
+        if (!dragging) return;
+        const curAngle = getPointerAngle(e.clientX, e.clientY);
+        let delta = curAngle - prevAngle;
+        if (delta > Math.PI) delta -= Math.PI * 2;
+        if (delta < -Math.PI) delta += Math.PI * 2;
+        prevAngle = curAngle;
+
+        // Wheel visual rotation is 4.5x rear wheel steer angle
+        const deltaDeg = (delta * 180) / Math.PI;
+        state.steerDeg = Math.max(-MAX_STEER_DEG, Math.min(MAX_STEER_DEG, state.steerDeg + deltaDeg / 4.5));
+        updateHudUI();
+      });
+
+      function endDrag() { dragging = false; }
+      stage.addEventListener('pointerup', endDrag);
+      stage.addEventListener('pointercancel', endDrag);
+    }
+
+    function setupKeyboardControls() {
+      window.addEventListener('keydown', function(e) {
+        if (e.repeat) {
+          // Allow continuous hold for driving/hydraulics
+        }
+        const key = e.key.toLowerCase();
+        if (key === 'w' || e.key === 'ArrowUp') {
+          heldInputs.gas = true;
+          const b = document.getElementById('btn-gas');
+          if (b) b.classList.add('is-pressed');
+        } else if (key === 's' || e.key === 'ArrowDown' || e.code === 'Space') {
+          if (e.code === 'Space') e.preventDefault();
+          heldInputs.brake = true;
+          const b = document.getElementById('btn-brake');
+          if (b) b.classList.add('is-pressed');
+        } else if (key === 'a' || e.key === 'ArrowLeft') {
+          heldInputs.steerLeft = true;
+        } else if (key === 'd' || e.key === 'ArrowRight') {
+          heldInputs.steerRight = true;
+        } else if (key === 'k') {
+          heldInputs.liftUp = true; // 下 = 上升
+          const b = document.getElementById('btn-lift-up');
+          if (b) b.classList.add('is-pressed');
+        } else if (key === 'i') {
+          heldInputs.liftDown = true; // 上 = 下降
+          const b = document.getElementById('btn-lift-down');
+          if (b) b.classList.add('is-pressed');
+        } else if (key === 'l') {
+          heldInputs.tiltBack = true; // 下 = 後仰
+          const b = document.getElementById('btn-tilt-back');
+          if (b) b.classList.add('is-pressed');
+        } else if (key === 'o') {
+          heldInputs.tiltFwd = true; // 上 = 前傾
+          const b = document.getElementById('btn-tilt-fwd');
+          if (b) b.classList.add('is-pressed');
+        } else if (!e.repeat) {
+          if (key === 'b') toggleSeatbelt();
+          else if (key === 'g') triggerHandSignal();
+          else if (key === 'p') toggleParkingBrake();
+          else if (key === 'x') centerSteeringWheel();
+          else if (key === 'v') cycleCamera();
+          else if (key === 'm') toggleAudio();
+          else if (key === '1') setGear('F');
+          else if (key === '2') setGear('N');
+          else if (key === '3') setGear('R');
+          else if (e.key === 'Escape') closeModal();
+        }
+      });
+
+      window.addEventListener('keyup', function(e) {
+        const key = e.key.toLowerCase();
+        if (key === 'w' || e.key === 'ArrowUp') {
+          heldInputs.gas = false;
+          const b = document.getElementById('btn-gas');
+          if (b) b.classList.remove('is-pressed');
+        } else if (key === 's' || e.key === 'ArrowDown' || e.code === 'Space') {
+          heldInputs.brake = false;
+          const b = document.getElementById('btn-brake');
+          if (b) b.classList.remove('is-pressed');
+        } else if (key === 'a' || e.key === 'ArrowLeft') {
+          heldInputs.steerLeft = false;
+        } else if (key === 'd' || e.key === 'ArrowRight') {
+          heldInputs.steerRight = false;
+        } else if (key === 'k') {
+          heldInputs.liftUp = false;
+          const b = document.getElementById('btn-lift-up');
+          if (b) b.classList.remove('is-pressed');
+        } else if (key === 'i') {
+          heldInputs.liftDown = false;
+          const b = document.getElementById('btn-lift-down');
+          if (b) b.classList.remove('is-pressed');
+        } else if (key === 'l') {
+          heldInputs.tiltBack = false;
+          const b = document.getElementById('btn-tilt-back');
+          if (b) b.classList.remove('is-pressed');
+        } else if (key === 'o') {
+          heldInputs.tiltFwd = false;
+          const b = document.getElementById('btn-tilt-fwd');
+          if (b) b.classList.remove('is-pressed');
+        }
+      });
+    }
+
+    // =========================================================================
+    // 10. PERSISTENCE (notebookAppApi) & ANIMATION LOOP
+    // =========================================================================
+    async function loadPersistentState() {
+      if (!window.notebookAppApi || !window.notebookAppApi.getAppState) return;
+      try {
+        const saved = await window.notebookAppApi.getAppState();
+        if (saved && typeof saved === 'object') {
+          if (typeof saved.bestScore === 'number') state.bestScore = saved.bestScore;
+          if (typeof saved.bestTimeRemaining === 'number') state.bestTimeRemaining = saved.bestTimeRemaining;
+          if (typeof saved.completedRuns === 'number') state.completedRuns = saved.completedRuns;
+          if (typeof saved.soundEnabled === 'boolean') {
+            state.soundEnabled = saved.soundEnabled;
+            const iconOn = document.getElementById('sound-icon-on');
+            const iconOff = document.getElementById('sound-icon-off');
+            if (iconOn) iconOn.style.display = state.soundEnabled ? 'block' : 'none';
+            if (iconOff) iconOff.style.display = state.soundEnabled ? 'none' : 'block';
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function savePersistentState() {
+      if (!window.notebookAppApi || !window.notebookAppApi.setAppState) return;
+      try {
+        await window.notebookAppApi.setAppState({
+          bestScore: state.bestScore,
+          bestTimeRemaining: state.bestTimeRemaining,
+          completedRuns: state.completedRuns,
+          soundEnabled: state.soundEnabled
+        });
+      } catch (e) {}
+    }
+
+    let animId = null;
+    let lastFrameTime = performance.now();
+    let lastHudSync = 0;
+
+    function animate(now) {
+      const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+      lastFrameTime = now;
+
+      updatePhysics(dt);
+      sync3DModels(dt);
+
+      if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+      }
+
+      // Sync DOM HUD at ~20fps for smooth counters without DOM thrashing
+      if (now - lastHudSync > 48) {
+        lastHudSync = now;
+        updateHudUI();
+      }
+
+      animId = requestAnimationFrame(animate);
+    }
+
+    function handleResize() {
+      if (!renderer || !camera) return;
+      const w = window.innerWidth;
+      const h = Math.max(1, window.innerHeight);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    async function bootstrap() {
+      initScene();
+      setupSteeringWheelInteraction();
+      setupKeyboardControls();
+      window.addEventListener('resize', handleResize);
+
+      await loadPersistentState();
+      updateHudUI();
+
+      if (animId) cancelAnimationFrame(animId);
+      lastFrameTime = performance.now();
+      animId = requestAnimationFrame(animate);
+
+      showToast(`請點左上「SOP 檢核」或按 [B][G][P] 與油壓桿完成起步檢查`, 'normal');
+
+      if (window.notebookAppApi && window.notebookAppApi.notifyAppReady) {
+        window.notebookAppApi.notifyAppReady();
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</body>
+</html>
